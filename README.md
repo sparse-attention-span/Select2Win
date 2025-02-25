@@ -11,7 +11,7 @@
 ## Trivia
 
 ### Ball Tree
-A **ball tree** is a hierarchical data structure that recursively partitions points into nested sets of similar size, where each set is represented by a ball that covers all the points in the set. The input is a point cloud, and the tree is built recursively::
+A **ball tree** is a hierarchical data structure that recursively partitions points into nested sets of similar size, where each set is represented by a ball that covers all the points in the set. The input is a point cloud, and the tree is built recursively:
 <p align="center">
     <img src="misc/ball_tree_animation.gif" alt="Ball Tree Animation" width="40%"/>
 </p>
@@ -139,12 +139,12 @@ batch_size, num_points = 16, 8000
 # NumPy
 points = np.random.rand(num_points * bs, 2).astype(np.float32)
 batch_idx = np.repeat(np.arange(bs), num_points)
-indices, mask = build_balltree(points, batch_idx)
+tree_idx, tree_mask = build_balltree(points, batch_idx)
 
 # PyTorch
 points = torch.rand(num_points * bs, 2, dtype=torch.float32, device='cuda')
 batch_idx = torch.repeat_interleave(torch.arange(bs, device='cuda'), num_points)
-indices, maskh = build_balltree_torch(points, batch_idx) # Returns tensors on the same device
+tree_idx, tree_mask = build_balltree_torch(points, batch_idx) # Returns tensors on the same device
 ```
 
 ### Benchmark
