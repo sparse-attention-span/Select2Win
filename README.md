@@ -37,15 +37,14 @@ The ball tree is stored in memory contiguously - at each level of the tree, poin
 
 This property is critical and allows us to implement key operations described above simply via `.view` or `.mean`:
 ```python
-# partitioning into balls before attention
-x_partitioned = x.view(-1, ball_size, dim)
+# Ball Tree Attention
+x_partitioned = x.view(num_balls, ball_size, dim) # partitioning into balls before attention
+x = MHSA(x_partitioned).view(-1, dim) # compute MHSA and reshape back
 
-# coarsening a tree: pooling inner points to the center
-pos_coarsened = pos.view(-1, ball_size, dim).mean(1)
-
-# use learnable pooling to pool features
-pooling_fn = nn.Linear(dim * ball_size, dim)
-x_corasened = pooling_fn(x.view(-1, ball_size * dim)) # (-1, dim)
+# Pooling (coarsening)
+pos_coarsened = pos.view(num_balls, ball_size, dim).mean(1) # pooling to balls' centers
+pooling_fn = nn.Linear(dim * ball_size, dim) # use learnable pooling to pool features
+x_coarsened = pooling_fn(x.view(num_balls, ball_size * dim)) # (num_balls, dim)
 ```
 ### Examples of ball trees
 Below are examples of ball trees that we built in our experiments - polypeptides in molecular dynamics and cars in ShapeNet-Car:
