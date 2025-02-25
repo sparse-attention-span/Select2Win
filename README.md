@@ -44,7 +44,7 @@ x_partitioned = x.view(-1, ball_size, dim)
 pos_coarsened = pos.view(-1, ball_size, dim).mean(1)
 
 # use learnable pooling to pool features
-pooling_fn = Linear(dim * ball_size, dim)
+pooling_fn = nn.Linear(dim * ball_size, dim)
 x_corasened = pooling_fn(x.view(-1, ball_size * dim)) # (-1, dim)
 ```
 ### Examples of ball trees
@@ -63,6 +63,7 @@ Erwin expects as inputs:
  - `radius`: (optionally) float radius to build radius connectivity (used when edge_index is not given)
 
 ```python
+import torch
 from models import ErwinTransformer
 
 config = {
@@ -80,13 +81,14 @@ config = {
 model = ErwinTransformer(**config).cuda()
 
 bs = 16
-num_points = 1000
+num_points = 2048
 
 node_features = torch.randn(num_points * bs, 32).cuda()
 node_positions = torch.rand(num_points * bs, 3).cuda()
 batch_idx = torch.repeat_interleave(torch.arange(bs), num_points).cuda()
+radius = 0.05 # build radius connectivity if not given otherwise
 
-out = model(node_features, node_positions, batch_idx)
+out = model(node_features, node_positions, batch_idx, radius=radius)
 ```
 
 ### Erwin is fast
