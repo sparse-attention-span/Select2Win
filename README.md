@@ -137,14 +137,14 @@ from balltree import build_balltree, build_balltree_torch
 batch_size, num_points = 16, 8000
 
 # NumPy
-points = np.random.rand(n * bs, 2, dtype=np.float32)
-batch_idx = np.repeat(np.arange(bs), n)
-indices, mask = build_balltree(data, batch_idx)
+points = np.random.rand(num_points * bs, 2).astype(np.float32)
+batch_idx = np.repeat(np.arange(bs), num_points)
+indices, mask = build_balltree(points, batch_idx)
 
 # PyTorch
-points = torch.rand(n * bs, 2, dtype=torch.float32, device='cuda')
-batch_idx = torch.repeat_interleave(torch.arange(bs, device='cuda'), n)
-indices, maskh = build_balltree_torch(data, batch_idx) # Returns tensors on the same device
+points = torch.rand(num_points * bs, 2, dtype=torch.float32, device='cuda')
+batch_idx = torch.repeat_interleave(torch.arange(bs, device='cuda'), num_points)
+indices, maskh = build_balltree_torch(points, batch_idx) # Returns tensors on the same device
 ```
 
 ### Benchmark
