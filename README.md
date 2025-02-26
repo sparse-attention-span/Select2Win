@@ -23,7 +23,7 @@ The main idea of the paper is to compute attention within the ball tree partitio
 </p>
 
 ### Hierarchical structure
-Since Ball Tree Attention is localized, we progressively coarsen and then refine the ball tree to aggregate global information following a U-Net-like structure of the model::
+Since Ball Tree Attention is localized, we progressively coarsen and then refine the ball tree to aggregate global information following a U-Net-like structure of the model:
 <p align="center">
     <img src="misc/ball_tree_coarsening.png" alt="Ball Tree Coarsening" width="90%"/>
 </p>
