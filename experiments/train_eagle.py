@@ -19,7 +19,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="erwin",
                         help="Model type (mpnn, mace, pointtransformer, pointnetpp, erwin)")
-    parser.add_argument("--data-path", type=str, default="/home/mzhdano/eagle/data")    
+    parser.add_argument("--data-path", type=str)    
     parser.add_argument("--size", type=str, default="small",
                         choices=["small", "medium", "large"],
                         help="Model size (tiny, small, base)")

@@ -18,7 +18,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="erwin", 
                         choices=('mpnn', 'pointtransformer', 'pointnetpp', 'erwin'))
-    parser.add_argument("--data-path", type=str, default="/home/mzhdano/shapenet_car/preprocessed")
+    parser.add_argument("--data-path", type=str)
     parser.add_argument("--size", type=str, default="small", 
                         choices=('small', 'medium', 'large'))
     parser.add_argument("--num-epochs", type=int, default=3000)

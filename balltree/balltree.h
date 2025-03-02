@@ -185,4 +185,78 @@ void build_tree(
     );
 }
 
+
+/**
+ * @brief Partitions leaves of a complete ball tree K times again assuming the leaves were subjected to an orthogonal transformation
+ * 
+ * Takes leaves of a complete ball tree (power of 2 size) and partitions them
+ * K times, resulting in partitions of size N/2^K.
+ * 
+ * @param data              Pointer to data array
+ * @param idx_array         Working array of indices (initialized to [0,1,2,...])
+ * @param output_indices    Output array for the partitioned indices
+ * @param idx_start         Start index in idx_array
+ * @param idx_end           End index in idx_array (exclusive)
+ * @param output_start      Start index in output_indices
+ * @param num_features      Number of features per point
+ * @param current_level   How many times data was partitioned
+ * @param target_level    Number of partitioning steps
+ */
+void partition_ball_tree(
+    const DataType* data,
+    IndexType* idx_array,
+    IndexType* output_indices,
+    IndexType idx_start,
+    IndexType idx_end,
+    IndexType output_start,
+    IndexType num_features,
+    IndexType current_level,
+    IndexType target_level
+) {
+    const IndexType num_points = idx_end - idx_start;
+    
+    // If we've reached the desired partitioning level or have only one point, stop recursion
+    if (target_level == current_level || num_points <= 1) {
+        // Copy the indices to the output
+        for (IndexType i = 0; i < num_points; ++i) {
+            output_indices[output_start + i] = idx_array[idx_start + i];
+        }
+        return;
+    }
+    
+    // Find best splitting dimension and partition points
+    const IndexType split_dim = find_split_dimension(
+        data, idx_array, idx_start, idx_end, num_features
+    );
+    const IndexType mid_point = (idx_start + idx_end) / 2;
+    
+    if (num_points > 1) {
+        partition_node_indices(
+            data,
+            idx_array + idx_start,
+            split_dim,
+            mid_point - idx_start,
+            num_features,
+            num_points
+        );
+    }
+    
+    // Calculate output position for left child's points
+    const IndexType left_size = mid_point - idx_start;
+    
+    // Recursively build left and right subtrees
+    partition_ball_tree(
+        data, idx_array, output_indices,
+        idx_start, mid_point, output_start,
+        num_features, current_level + 1, target_level
+    );
+    
+    partition_ball_tree(
+        data, idx_array, output_indices,
+        mid_point, idx_end, output_start + left_size,
+        num_features, current_level + 1, target_level
+    );
+}
+
+
 #endif // BALLTREE_FIXED_H

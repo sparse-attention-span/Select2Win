@@ -9,7 +9,7 @@ from einops import rearrange, reduce
 from typing import Literal, List
 from dataclasses import dataclass
 
-from balltree import build_balltree_torch
+from balltree import build_balltree_with_rotations
 
 
 def scatter_mean(src: torch.Tensor, idx: torch.Tensor, num_receivers: int):
@@ -100,6 +100,7 @@ class Node:
     x: torch.Tensor
     pos: torch.Tensor 
     batch_idx: torch.Tensor
+    tree_idx_rot: torch.Tensor | None = None
     children: Node | None = None
 
 
@@ -221,11 +222,14 @@ class BasicLayer(nn.Module):
         dim: int,
         num_heads: int,
         ball_size: int,
+        rotate: bool,
         dimensionality: int = 3,
+
     ):
         super().__init__()
 
         self.blocks = nn.ModuleList([ErwinTransformerBlock(dim, num_heads, ball_size, dimensionality) for _ in range(depth)])
+        self.rotate = [i % 2 for i in range(depth)] if rotate else [False] * depth
 
         self.pool = lambda node: node
         self.unpool = lambda node: node
@@ -237,8 +241,16 @@ class BasicLayer(nn.Module):
 
     def forward(self, node: Node) -> Node:
         node = self.unpool(node)
-        for blk in self.blocks:
-            node.x = blk(node.x, node.pos)
+
+        if self.rotate[1]: # if rotation is enabled, it will be used in the second block
+            assert node.tree_idx_rot is not None, "tree_idx_rot must be provided for rotation"
+            tree_idx_rot_inv = torch.argsort(node.tree_idx_rot) # map from rotated to original
+
+        for rotate, blk in zip(self.rotate, self.blocks):
+            if rotate:
+                node.x = blk(node.x[node.tree_idx_rot], node.pos[node.tree_idx_rot])[tree_idx_rot_inv]
+            else:
+                node.x = blk(node.x, node.pos)
         return self.pool(node)
 
 
@@ -255,6 +267,7 @@ class ErwinTransformer(nn.Module):
         dec_num_heads (List): list of number of heads for each decoder layer.
         dec_depths (List): list of number of ErwinTransformerBlock layers for each decoder layer.
         strides (List): list of strides for each encoder layer (reverse for decoder).
+        rotate (int): angle of rotation for cross-ball interactions; if 0, no rotation.
         decode (bool): whether to decode or not. If not, returns latent representation at the coarsest level.
         dimensionality (int): dimensionality of the input data.
         mp_steps (int): number of message passing steps in the MPNN Embedding.
@@ -267,25 +280,29 @@ class ErwinTransformer(nn.Module):
         self,
         c_in: int,
         c_hidden: int,
-        ball_size: List,
+        ball_sizes: List,
         enc_num_heads: List,
         enc_depths: List,
         dec_num_heads: List,
         dec_depths: List,
         strides: List,
+        rotate: int,
         decode: bool = True,
         dimensionality: int = 3,
         mp_steps: int = 3,
     ):
         super().__init__()
-        assert len(enc_num_heads) == len(enc_depths) == len(ball_size)
+        assert len(enc_num_heads) == len(enc_depths) == len(ball_sizes)
         assert len(dec_num_heads) == len(dec_depths) == len(strides)
-        assert len(strides) == len(ball_size) - 1
+        assert len(strides) == len(ball_sizes) - 1
         
+        self.rotate = rotate
         self.decode = decode
+        self.ball_sizes = ball_sizes
+        self.strides = strides
+
         self.embed = ErwinEmbedding(c_in, c_hidden, mp_steps, dimensionality)
 
-        strides = strides + [1] # 1 for bottleneck
         num_layers = len(enc_depths) - 1 # last one is a bottleneck
         num_hidden = [c_hidden] + [c_hidden * 2**i for i in range(1, num_layers+1)]
         
@@ -298,7 +315,8 @@ class ErwinTransformer(nn.Module):
                     stride=strides[i],
                     dim=num_hidden[i],
                     num_heads=enc_num_heads[i],
-                    ball_size=ball_size[i],
+                    ball_size=ball_sizes[i],
+                    rotate=rotate > 0,
                     dimensionality=dimensionality,
                 )
             )
@@ -309,7 +327,8 @@ class ErwinTransformer(nn.Module):
             stride=None,
             dim=num_hidden[-1],
             num_heads=enc_num_heads[-1],
-            ball_size=ball_size[-1],
+            ball_size=ball_sizes[-1],
+            rotate=rotate > 0,
             dimensionality=dimensionality,
         )
 
@@ -323,7 +342,8 @@ class ErwinTransformer(nn.Module):
                         stride=strides[i],
                         dim=num_hidden[i],
                         num_heads=dec_num_heads[i],
-                        ball_size=ball_size[i],
+                        ball_size=ball_sizes[i],
+                        rotate=rotate > 0,
                         dimensionality=dimensionality,
                     )
                 )
@@ -345,7 +365,7 @@ class ErwinTransformer(nn.Module):
         with torch.no_grad():
             # if not given, build the ball tree and radius graph
             if tree_idx is None and tree_mask is None:
-                tree_idx, tree_mask = build_balltree_torch(node_positions, batch_idx)
+                tree_idx, tree_mask, tree_idx_rot = build_balltree_with_rotations(node_positions, batch_idx, self.strides, self.ball_sizes, self.rotate)
             if edge_index is None:
                 assert radius is not None, "radius (float) must be provided if edge_index is not given to build radius graph"
                 edge_index = torch_cluster.radius_graph(node_positions, radius, batch=batch_idx, loop=True)
@@ -356,11 +376,14 @@ class ErwinTransformer(nn.Module):
             x=x[tree_idx],
             pos=node_positions[tree_idx],
             batch_idx=batch_idx[tree_idx],
+            tree_idx_rot=None, # will be populated in the encoder
         )
 
         for layer in self.encoder:
+            node.tree_idx_rot = tree_idx_rot.pop(0)
             node = layer(node)
 
+        node.tree_idx_rot = tree_idx_rot.pop(0)
         node = self.bottleneck(node)
 
         if self.decode:

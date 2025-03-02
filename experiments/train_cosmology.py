@@ -18,8 +18,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="erwin",
                         help="Model type (mpnn, pointtransformer, erwin)")
-    parser.add_argument("--data-path", type=str,
-                        default="/ivi/zfs/s0/original_homes/mzhdano/eqnn-jax/benchmarks/galaxies/quijote_records")
+    parser.add_argument("--data-path", type=str)
     parser.add_argument("--size", type=str, default="small",
                         choices=["small", "medium", "large"],
                         help="Model size configuration")

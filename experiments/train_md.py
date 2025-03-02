@@ -18,7 +18,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="erwin", 
                         help="Model type (mpnn, pointtransformer, pointnetpp, erwin)")
-    parser.add_argument("--data-path", type=str, default="/home/maxxxzdn/Deusex/mlcgmd/data/")
+    parser.add_argument("--data-path", type=str)
     parser.add_argument("--size", type=str, default="small",
                         choices=["small", "medium", "large"],
                         help="Model size (tiny, small, base)")
@@ -52,7 +52,8 @@ erwin_configs = {
         "dec_num_heads": [4, 4, 8, 16],
         "dec_depths": [2, 2, 2, 2],
         "strides": [2, 2, 2, 2],
-        "ball_size": [128, 128, 128, 64, 32],
+        "ball_sizes": [128, 128, 128, 64, 32],
+        "rotate": 45,
     },
     "medium": {
         "c_in": 16,
@@ -62,7 +63,8 @@ erwin_configs = {
         "dec_num_heads": [4, 4, 8, 16],
         "dec_depths": [2, 2, 2, 2],
         "strides": [2, 2, 2, 2],
-        "ball_size": [128, 128, 128, 64, 32],
+        "ball_sizes": [128, 128, 128, 64, 32],
+        "rotate": 45,
     },
     "large": {
         "c_in": 32,
@@ -72,7 +74,8 @@ erwin_configs = {
         "dec_num_heads": [4, 4, 8, 16],
         "dec_depths": [2, 2, 2, 2],
         "strides": [2, 2, 2, 2],
-        "ball_size": [128, 128, 128, 64, 32],
+        "ball_sizes": [128, 128, 128, 64, 32],
+        "rotate": 45,
     },
 }
 
