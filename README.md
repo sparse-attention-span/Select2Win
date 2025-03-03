@@ -46,6 +46,14 @@ pos_coarsened = pos.view(num_balls, ball_size, dim).mean(1) # pooling to balls' 
 pooling_fn = nn.Linear(dim * ball_size, dim) # use learnable pooling to pool features
 x_coarsened = pooling_fn(x.view(num_balls, ball_size * dim)) # (num_balls, dim)
 ```
+
+### Cross-ball interaction
+Since ball partitions are disjoint (i.e. each point can be assigned to a single ball only), we need to enable cross-ball interaction. This would allow information to leak from one ball to another, effectively increasing the receptive field of single layer. Our solution is inspired by SwinTransformer, however, instead of sliding windows we use rotating ball trees. By alternating between original rotated ball tree configurations, we make balls exchange information.
+<p align="center">
+    <img src="misc/ball_tree_with_rotations.png" alt="Tree examples" width="70%"/>
+</p>
+
+
 ### Examples of ball trees
 Below are examples of ball trees that we built in our experiments - polypeptides in molecular dynamics and cars in ShapeNet-Car:
 <p align="center">
@@ -96,7 +104,9 @@ Due to the simplicity of implementation, Erwin is *blazing fast*. Below is the b
 | nodes per point cloud | 1024   | 2048 | 4096 | 8192 | 16384 | 32768 |
 | :------------   | :--------: | :-----:  | :-----:  | :-----:  | :----:    | :--------: |
 | Forward | 15.2 ms | 17.3 ms | 31.6 ms | 79.7 ms| 189 ms | 459 ms |
-| Forward + Backward | 55.0 ms | 65.4 ms | 113.9 ms | 267.1 ms| 646.7 ms | OOM |
+| Forward + Backward | 55.0 ms | 65.4 ms | 114 ms | 267 ms| 646 ms | OOM |
+| Forward (w/ `torch.compile`) | 5.55 ms | 11.6 ms | 30.2 ms | 63.2 ms | 127 ms | 222 ms |
+| Forward + Backward (w/ `torch.compile`) | 26.4 ms | 45.4 ms | 114 ms | 232 ms | 456 ms | OOM |
 
 ### Erwin has a minimal set of dependencies
 
@@ -168,11 +178,11 @@ We compare the runtime of our implementation against the [`scikit-learn` impleme
 
 To run/replicate experiments, you will need to download:
 - [Cosmology dataset](https://zenodo.org/records/11479419) (7 GB)
-- [Single-chain polymet dataset](https://zenodo.org/records/6764836) (13 GB)
+- [Single-chain polymer dataset (MD)](https://zenodo.org/records/6764836) (13 GB) + [splits](https://github.com/kyonofx/mlcgmd/tree/main/graphwm/splits/chain)
 - [EAGLE dataset](https://datasets.liris.cnrs.fr/eagle-version1) (270 GB)
 - [ShapeNet-Car dataset](https://github.com/ml-jku/UPT/blob/main/SETUP_DATA.md) (2 GB) 
 
-
+For the single-chain polymer dataset, download all files and move them to the data folder that contains the `splits` folder.
 
 ### Experiments
 

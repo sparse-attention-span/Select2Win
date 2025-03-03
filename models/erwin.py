@@ -361,7 +361,7 @@ class ErwinTransformer(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
     
-    def forward(self, node_features: torch.Tensor, node_positions: torch.Tensor, batch_idx: torch.Tensor, edge_index=None, tree_idx=None, tree_mask=None, radius=None, **kwargs):
+    def forward(self, node_features: torch.Tensor, node_positions: torch.Tensor, batch_idx: torch.Tensor, edge_index: torch.Tensor = None, tree_idx: torch.Tensor = None, tree_mask: torch.Tensor = None, radius: float = None, **kwargs):
         with torch.no_grad():
             # if not given, build the ball tree and radius graph
             if tree_idx is None and tree_mask is None:

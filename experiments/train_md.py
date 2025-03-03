@@ -24,7 +24,7 @@ def parse_args():
                         help="Model size (tiny, small, base)")
     parser.add_argument("--dilation", type=int, default=1,
                         help="Dilation factor for the dataset")
-    parser.add_argument("--num-epochs", type=int, default=50000,
+    parser.add_argument("--num-epochs", type=int, default=100000,
                         help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=32,
                         help="Batch size for training")
@@ -34,7 +34,7 @@ def parse_args():
                         help="Learning rate")
     parser.add_argument("--val-every-iter", type=int, default=5000,
                         help="Validation frequency in iterations")
-    parser.add_argument("--experiment", type=str, default="md_clean",
+    parser.add_argument("--experiment", type=str, default="md",
                         help="Experiment name")
     parser.add_argument("--test", type=int, default=1,
                         help="Whether to run testing")
@@ -92,21 +92,21 @@ if __name__ == "__main__":
 
     train_dataset = MDDataset(
         directory=f"{args.data_path}/polymer_train",
-        split=f"{args.data_path}/splits/chain/train.txt",
+        split=f"{args.data_path}/splits/train.txt",
         seq_len=16,
         traj_len=10000,
     )
 
     valid_dataset = MDDataset(
         directory=f"{args.data_path}/polymer_train",
-        split=f"{args.data_path}/splits/chain/val.txt",
+        split=f"{args.data_path}/splits/val.txt",
         seq_len=16,
         traj_len=10000,
     )
 
     test_dataset = MDDataset(
         directory=f"{args.data_path}/polymer_test",
-        split=f"{args.data_path}/splits/chain/test_class2.txt",
+        split=f"{args.data_path}/splits/test_class2.txt",
         seq_len=16,
         traj_len=1000,
     )
@@ -116,7 +116,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=True,
         collate_fn=train_dataset.collate_fn,
-        num_workers=args.batch_size,
+        num_workers=16,
     )
     
     valid_loader = DataLoader(
@@ -124,7 +124,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=False,
         collate_fn=train_dataset.collate_fn,
-        num_workers=args.batch_size,
+        num_workers=16,
     )
     
     test_loader = DataLoader(
@@ -132,7 +132,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=False,
         collate_fn=train_dataset.collate_fn,
-        num_workers=args.batch_size,
+        num_workers=16,
     )
 
     if args.model == "erwin":
@@ -140,7 +140,6 @@ if __name__ == "__main__":
 
     dynamics_model = model_cls[args.model](**model_config)
     model = MDModel(seq_len=train_dataset.seq_len, dynamics_model=dynamics_model).cuda()
-    # model = torch.compile(model)
 
     optimizer = AdamW(model.parameters(), lr=args.lr)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-7)

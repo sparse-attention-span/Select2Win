@@ -27,7 +27,7 @@ def parse_args():
                         help="Dilation factor for the dataset")
     parser.add_argument("--num-epochs", type=int, default=200000,
                         help="Number of training epochs")
-    parser.add_argument("--batch-size", type=int, default=16,
+    parser.add_argument("--batch-size", type=int, default=12,
                         help="Batch size for training")
     parser.add_argument("--use-wandb", action="store_true", default=True,
                         help="Whether to use Weights & Biases for logging")
@@ -49,38 +49,38 @@ erwin_configs = {
     "small": {
         "c_in": 16,
         "c_hidden": 16,
-        "window_size": [256, 256, 256, 128, 128],
+        "ball_sizes": [256, 256, 256, 128, 128],
         "enc_num_heads": [2, 4, 8, 16, 32],
         "enc_depths": [2, 2, 2, 6, 2],
         "dec_num_heads": [4, 4, 8, 16],
         "dec_depths": [2, 2, 2, 2],
-        "strides": [2, 2, 2, 2, 1],
-        "use_bessel": False,
+        "strides": [2, 2, 2, 2],
         "dimensionality": 2,
+        "rotate": 45,
     },
     "medium": {
         "c_in": 16,
         "c_hidden": 32,
-        "window_size": [256, 256, 256, 128, 128],
+        "ball_sizes": [256, 256, 256, 128, 128],
         "enc_num_heads": [2, 4, 8, 16, 32],
         "enc_depths": [2, 2, 2, 6, 2],
         "dec_num_heads": [4, 4, 8, 16],
         "dec_depths": [2, 2, 2, 2],
-        "strides": [2, 2, 2, 2, 1],
-        "use_bessel": False,
+        "strides": [2, 2, 2, 2],
         "dimensionality": 2,
+        "rotate": 45,
     },
     "large": {
         "c_in": 32,
         "c_hidden": 64,
-        "window_size": [256, 256, 256, 128, 128],
+        "ball_sizes": [256, 256, 256, 128, 128],
         "enc_num_heads": [2, 4, 8, 16, 32],
         "enc_depths": [2, 2, 2, 6, 2],
         "dec_num_heads": [4, 4, 8, 16],
         "dec_depths": [2, 2, 2, 2],
-        "strides": [2, 2, 2, 2, 1],
-        "use_bessel": False,
+        "strides": [2, 2, 2, 2],
         "dimensionality": 2,
+        "rotate": 45,
     },
 }
 
@@ -130,10 +130,7 @@ if __name__ == "__main__":
         model_config = erwin_configs[args.size]
 
     dynamic_model = model_cls[args.model](**model_config)
-    model = EagleModel(
-        dynamic_model, train_dataset.denormalize, use_pe=args.use_pe
-    ).cuda()
-    # model = torch.compile(model)
+    model = EagleModel(dynamic_model, train_dataset.denormalize, use_pe=args.use_pe).cuda()
 
     optimizer = AdamW(model.parameters(), lr=args.lr)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-7)

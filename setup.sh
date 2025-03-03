@@ -41,10 +41,11 @@ else
     # ShapeNet-Car dependencies
     # see https://github.com/ml-jku/UPT/blob/main/SETUP_DATA.md
 
-# misc dependencies
-uv pip install wandb
-uv pip install tqdm
-uv pip install matplotlib
+    # misc dependencies
+    uv pip install wandb
+    uv pip install tqdm
+    uv pip install matplotlib
+fi
 
 # install c++ balltree implementation
 cd balltree

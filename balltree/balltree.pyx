@@ -593,6 +593,7 @@ def generate_rotation_matrix(angle: float, dim: int, device: torch.device):
     else:
         raise ValueError(f"Unsupported dimension: {dim}")
 
+@torch.compiler.disable(recursive=False)
 def build_balltree_with_rotations(data: torch.Tensor, batch_idx: torch.Tensor, strides: list, ball_sizes: list, angle: float = 45.):
     """ Builds the computational backbone of Erwin Transformer's layers.
     
