@@ -1,5 +1,4 @@
 # Erwin Transformer
-
 <p align="center">
     <a href="https://arxiv.org/abs/2502.17019"><strong>Erwin: A Tree-based Hierarchical Transformer for Large-scale Physical Systems</strong></a><br/>
     <a href="https://maxxxzdn.github.io/">Max Zhdanov</a>, Max Welling, Jan-Willem van de Meent
@@ -48,7 +47,7 @@ x_coarsened = pooling_fn(x.view(num_balls, ball_size * dim)) # (num_balls, dim)
 ```
 
 ### Cross-ball interaction
-Since ball partitions are disjoint (i.e. each point can be assigned to a single ball only), we need to enable cross-ball interaction. This would allow information to leak from one ball to another, effectively increasing the receptive field of single layer. Our solution is inspired by SwinTransformer, however, instead of sliding windows we use rotating ball trees. By alternating between original rotated ball tree configurations, we make balls exchange information.
+Since ball partitions are disjoint (i.e. each point can be assigned to a single ball only), we need to enable cross-ball interaction. This would allow information to leak from one ball to another, effectively increasing the receptive field of a single layer. Our solution is inspired by SwinTransformer, however, instead of sliding windows we use rotating ball trees. By alternating between original rotated ball tree configurations, we make balls exchange information.
 <p align="center">
     <img src="misc/ball_tree_with_rotations.png" alt="Tree examples" width="70%"/>
 </p>
@@ -61,7 +60,6 @@ Below are examples of ball trees that we built in our experiments - polypeptides
 </p>
 
 ## Using Erwin
-
 Erwin expects as inputs:
  - `node_features`: a ragged array of node features, shape: [num_points, num_features]
  - `node_positions`: a ragged array of node positions, shape: [num_points, num_dimensions]
@@ -103,13 +101,12 @@ Due to the simplicity of implementation, Erwin is *blazing fast*. Below is the b
 
 | nodes per point cloud | 1024   | 2048 | 4096 | 8192 | 16384 | 32768 |
 | :------------   | :--------: | :-----:  | :-----:  | :-----:  | :----:    | :--------: |
-| Forward | 15.2 ms | 17.3 ms | 31.6 ms | 79.7 ms| 189 ms | 459 ms |
-| Forward + Backward | 55.0 ms | 65.4 ms | 114 ms | 267 ms| 646 ms | OOM |
-| Forward (w/ `torch.compile`) | 5.55 ms | 11.6 ms | 30.2 ms | 63.2 ms | 127 ms | 222 ms |
-| Forward + Backward (w/ `torch.compile`) | 26.4 ms | 45.4 ms | 114 ms | 232 ms | 456 ms | OOM |
+| Fwd | 15.2 ms | 17.3 ms | 31.6 ms | 79.7 ms| 189 ms | 459 ms |
+| Fwd (w/ `torch.compile`) | 5.55 ms | 11.6 ms | 30.2 ms | 63.2 ms | 127 ms | 222 ms |
+| Fwd + Bwd | 55.0 ms | 65.4 ms | 114 ms | 267 ms| 646 ms | OOM |
+| Fwd + Bwd (w/ `torch.compile`) | 26.4 ms | 45.4 ms | 114 ms | 232 ms | 456 ms | OOM |
 
 ### Erwin has a minimal set of dependencies
-
 Erwin has a minimal number of dependencies:
 - PyTorch
 - einops
@@ -133,12 +130,10 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 ## Ball tree implementation in C++
-
 We provide a fast, parallelized implementation of Ball Trees in C++ and Cython.
 The code is optimized for batched data coming in the form of a ragged array.
 
 ### Usage
-
 ```python
 import numpy as np
 from balltree import build_balltree, build_balltree_torch
@@ -175,7 +170,6 @@ We compare the runtime of our implementation against the [`scikit-learn` impleme
 ## Replicating experiments  
 
 ### Experimental Data
-
 To run/replicate experiments, you will need to download:
 - [Cosmology dataset](https://zenodo.org/records/11479419) (7 GB)
 - [Single-chain polymer dataset (MD)](https://zenodo.org/records/6764836) (13 GB) + [splits](https://github.com/kyonofx/mlcgmd/tree/main/graphwm/splits/chain)
@@ -185,12 +179,14 @@ To run/replicate experiments, you will need to download:
 For the single-chain polymer dataset, download all files and move them to the data folder that contains the `splits` folder.
 
 ### Experiments
-
 Training scripts are given in [experiments](experiments). For example, to train on the molecular dynamics task:
 ```
 cd experiments
-python train_md.py --use-wandb 1 --size medium --model erwin
+python train_md.py --use-wandb 1 --size medium --model erwin --data-path "path/to/data/dir"
 ```
+
+## Future work
+In case you have any ideas for future work based on Erwin or if you see possible efficiency improvements, please let me know. I would be happy to discuss them :)
 
 ## BibTeX
 ```
