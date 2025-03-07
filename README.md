@@ -79,8 +79,9 @@ config = {
     'dec_num_heads': [4, 4, 8, 16],
     'dec_depths': [2, 2, 2, 2],
     'strides': [2, 2, 2, 2],
-    'ball_size': [128, 128, 128, 128, 128],
+    'ball_sizes': [128, 128, 128, 128, 128],
     'dimensionality': 3, # 3D space
+    'rotate': 0, # disable cross-ball interaction
 }
 
 model = ErwinTransformer(**config).cuda()

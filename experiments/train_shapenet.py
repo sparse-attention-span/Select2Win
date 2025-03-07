@@ -40,7 +40,7 @@ erwin_configs = {
     "small": {
         "c_in": 8,
         "c_hidden": 32,
-        "ball_size": [256, 256],
+        "ball_sizes": [256, 256],
         "enc_num_heads": [8, 16],
         "enc_depths": [6, 2],
         "dec_num_heads": [8],
@@ -50,7 +50,7 @@ erwin_configs = {
     "medium": {
         "c_in": 8,
         "c_hidden": 64,
-        "ball_size": [256, 256],
+        "ball_sizes": [256, 256],
         "enc_num_heads": [8, 16],
         "enc_depths": [6, 2],
         "dec_num_heads": [8],
@@ -60,7 +60,7 @@ erwin_configs = {
     "large": {
         "c_in": 8,
         "c_hidden": 96,
-        "ball_size": [256, 256],
+        "ball_sizes": [256, 256],
         "enc_num_heads": [8, 16],
         "enc_depths": [6, 2],
         "dec_num_heads": [8],

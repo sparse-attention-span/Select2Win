@@ -51,8 +51,8 @@ erwin_configs = {
         "enc_depths": [2, 2, 6, 2],
         "dec_num_heads": [2, 4, 8],
         "dec_depths": [2, 2, 2],
-        "strides": [2, 2, 2, 1],
-        "use_bessel": True,
+        "strides": [2, 2, 2],
+        "ball_sizes": [256, 256, 256],
     },
     "medium": {
         "c_in": 64,
@@ -61,8 +61,8 @@ erwin_configs = {
         "enc_depths": [2, 2, 6, 2],
         "dec_num_heads": [2, 4, 8],
         "dec_depths": [2, 2, 2],
-        "strides": [2, 2, 2, 1],
-        "use_bessel": True,
+        "strides": [2, 2, 2],
+        "ball_sizes": [256, 256, 256],
     },
     "large": {
         "c_in": 128,
@@ -71,8 +71,8 @@ erwin_configs = {
         "enc_depths": [2, 2, 6, 2],
         "dec_num_heads": [2, 4, 8],
         "dec_depths": [2, 2, 2],
-        "strides": [2, 2, 2, 1],
-        "use_bessel": True,
+        "strides": [2, 2, 2],
+        "ball_sizes": [256, 256, 256],
     },
 }
 
