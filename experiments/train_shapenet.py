@@ -21,8 +21,8 @@ def parse_args():
     parser.add_argument("--data-path", type=str)
     parser.add_argument("--size", type=str, default="small", 
                         choices=('small', 'medium', 'large'))
-    parser.add_argument("--num-epochs", type=int, default=3000)
-    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--num-epochs", type=int, default=100000)
+    parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--use-wandb", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--val-every-iter", type=int, default=100, 
@@ -31,41 +31,47 @@ def parse_args():
                         help="Experiment name in wandb")
     parser.add_argument("--test", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--knn", type=int, default=16)
+    parser.add_argument("--knn", type=int, default=8)
     
     return parser.parse_args()
 
 
 erwin_configs = {
     "small": {
-        "c_in": 8,
-        "c_hidden": 32,
-        "ball_sizes": [256, 256],
-        "enc_num_heads": [8, 16],
-        "enc_depths": [6, 2],
-        "dec_num_heads": [8],
-        "dec_depths": [2],
-        "strides": [2],
-    },
-    "medium": {
-        "c_in": 8,
+        "c_in": 3,
         "c_hidden": 64,
         "ball_sizes": [256, 256],
-        "enc_num_heads": [8, 16],
-        "enc_depths": [6, 2],
+        "enc_num_heads": [8, 8],
+        "enc_depths": [6, 6],
         "dec_num_heads": [8],
-        "dec_depths": [2],
-        "strides": [2],
+        "dec_depths": [6],
+        "strides": [1],
+        "rotate": 45,
+        "mp_steps": 3,
+    },
+    "medium": {
+        "c_in": 3,
+        "c_hidden": 128,
+        "ball_sizes": [256, 256],
+        "enc_num_heads": [8, 8],
+        "enc_depths": [6, 6],
+        "dec_num_heads": [8],
+        "dec_depths": [6],
+        "strides": [1],
+        "rotate": 45,
+        "mp_steps": 3,
     },
     "large": {
-        "c_in": 8,
-        "c_hidden": 96,
+        "c_in": 3,
+        "c_hidden": 256,
         "ball_sizes": [256, 256],
-        "enc_num_heads": [8, 16],
-        "enc_depths": [6, 2],
+        "enc_num_heads": [8, 8],
+        "enc_depths": [6, 6],
         "dec_num_heads": [8],
-        "dec_depths": [2],
-        "strides": [2],
+        "dec_depths": [6],
+        "strides": [1],
+        "rotate": 45,
+        "mp_steps": 3,
     },
 }
 
@@ -129,7 +135,7 @@ if __name__ == "__main__":
     
     main_model = model_cls[args.model](**model_config)
     model = ShapenetCarModel(main_model).cuda()
-    # model = torch.compile(model)
+    model = torch.compile(model)
 
     optimizer = AdamW(model.parameters(), lr=args.lr)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-5)
