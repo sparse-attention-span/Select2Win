@@ -62,7 +62,7 @@ erwin_configs = {
         "mp_steps": 3,
     },
     "large": {
-        "c_in": 3,
+        "c_in": 64,
         "c_hidden": 256,
         "ball_sizes": [256, 256],
         "enc_num_heads": [8, 8],
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     model = torch.compile(model)
 
     optimizer = AdamW(model.parameters(), lr=args.lr)
-    scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-5)
+    scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=5e-5)
 
     config = vars(args)
     config.update(model_config)
