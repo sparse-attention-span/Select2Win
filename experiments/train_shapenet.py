@@ -38,7 +38,7 @@ def parse_args():
 
 erwin_configs = {
     "small": {
-        "c_in": 3,
+        "c_in": 64,
         "c_hidden": 64,
         "ball_sizes": [256, 256],
         "enc_num_heads": [8, 8],
@@ -50,7 +50,7 @@ erwin_configs = {
         "mp_steps": 3,
     },
     "medium": {
-        "c_in": 3,
+        "c_in": 64,
         "c_hidden": 128,
         "ball_sizes": [256, 256],
         "enc_num_heads": [8, 8],
