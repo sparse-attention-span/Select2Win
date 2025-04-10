@@ -202,13 +202,13 @@ class BallMSA(nn.Module):
 
 
 class ErwinTransformerBlock(nn.Module):
-    def __init__(self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3):
+    def __init__(self, dim: int, num_heads: int, ball_size: int, mlp_ratio: int, dimensionality: int = 3):
         super().__init__()
         self.ball_size = ball_size
         self.norm1 = nn.RMSNorm(dim)
         self.norm2 = nn.RMSNorm(dim)
         self.BMSA = BallMSA(dim, num_heads, ball_size, dimensionality)
-        self.swiglu = SwiGLU(dim, dim * 4)
+        self.swiglu = SwiGLU(dim, dim * mlp_ratio)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
         x = x + self.BMSA(self.norm1(x), pos)
@@ -224,13 +224,14 @@ class BasicLayer(nn.Module):
         dim: int,
         num_heads: int,
         ball_size: int,
+        mlp_ratio: int,
         rotate: bool,
         dimensionality: int = 3,
 
     ):
         super().__init__()
 
-        self.blocks = nn.ModuleList([ErwinTransformerBlock(dim, num_heads, ball_size, dimensionality) for _ in range(depth)])
+        self.blocks = nn.ModuleList([ErwinTransformerBlock(dim, num_heads, ball_size, mlp_ratio, dimensionality) for _ in range(depth)])
         self.rotate = [i % 2 for i in range(depth)] if rotate else [False] * depth
 
         self.pool = lambda node: node
@@ -271,6 +272,7 @@ class ErwinTransformer(nn.Module):
         strides (List): list of strides for each encoder layer (reverse for decoder).
         rotate (int): angle of rotation for cross-ball interactions; if 0, no rotation.
         decode (bool): whether to decode or not. If not, returns latent representation at the coarsest level.
+        mlp_ratio (int): ratio of SWIGLU's hidden dim to a layer's hidden dim.
         dimensionality (int): dimensionality of the input data.
         mp_steps (int): number of message passing steps in the MPNN Embedding.
 
@@ -290,6 +292,7 @@ class ErwinTransformer(nn.Module):
         strides: List,
         rotate: int,
         decode: bool = True,
+        mlp_ratio: int = 4,
         dimensionality: int = 3,
         mp_steps: int = 3,
     ):
@@ -319,6 +322,7 @@ class ErwinTransformer(nn.Module):
                     num_heads=enc_num_heads[i],
                     ball_size=ball_sizes[i],
                     rotate=rotate > 0,
+                    mlp_ratio=mlp_ratio,
                     dimensionality=dimensionality,
                 )
             )
@@ -331,6 +335,7 @@ class ErwinTransformer(nn.Module):
             num_heads=enc_num_heads[-1],
             ball_size=ball_sizes[-1],
             rotate=rotate > 0,
+            mlp_ratio=mlp_ratio,
             dimensionality=dimensionality,
         )
 
@@ -346,6 +351,7 @@ class ErwinTransformer(nn.Module):
                         num_heads=dec_num_heads[i],
                         ball_size=ball_sizes[i],
                         rotate=rotate > 0,
+                        mlp_ratio=mlp_ratio,
                         dimensionality=dimensionality,
                     )
                 )

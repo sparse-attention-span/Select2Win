@@ -81,6 +81,7 @@ config = {
     'strides': [2, 2, 2, 2],
     'ball_sizes': [128, 128, 128, 128, 128],
     'dimensionality': 3, # 3D space
+    'mlp_ratio': 4,
     'rotate': 0, # disable cross-ball interaction
 }
 
