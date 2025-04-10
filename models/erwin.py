@@ -122,8 +122,8 @@ class BallPooling(nn.Module):
         super().__init__()
         self.stride = stride
         input_dim = stride * dim + stride * dimensionality
-        self.proj = nn.Linear(input_dim, 2 * dim)
-        self.norm = nn.BatchNorm1d(2 * dim)
+        self.proj = nn.Linear(input_dim, stride * dim)
+        self.norm = nn.BatchNorm1d(stride * dim)
 
     def forward(self, node: Node) -> Node:
         if self.stride == 1: # no pooling
@@ -152,7 +152,7 @@ class BallUnpooling(nn.Module):
     def __init__(self, dim: int, stride: int, dimensionality: int = 3):
         super().__init__()
         self.stride = stride
-        input_dim = 2 * dim + stride * dimensionality
+        input_dim = stride * dim + stride * dimensionality
         self.proj = nn.Linear(input_dim, stride * dim)         
         self.norm = nn.BatchNorm1d(dim)
 
