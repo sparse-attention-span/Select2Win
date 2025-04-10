@@ -109,7 +109,8 @@ Due to the simplicity of implementation, Erwin is *blazing fast*. Below is the b
 
 ### Erwin has a minimal set of dependencies
 Erwin has a minimal number of dependencies:
-- PyTorch
+- PyTorch (version 2.5.0, CUDA 12.4)
+- NumPy
 - einops
 - Cython
 - torch-cluster (optional, is used to build a graph in the Embedding module)

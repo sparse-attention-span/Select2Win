@@ -9,9 +9,9 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from erwin.training import fit
-from erwin.models import ErwinTransformer
-from erwin.datasets import CosmologyDataset
-from erwin.experiments import CosmologyModel
+from erwin.models.erwin import ErwinTransformer
+from erwin.experiments.datasets import CosmologyDataset
+from erwin.experiments.wrappers import CosmologyModel
 
 
 def parse_args():

@@ -10,9 +10,9 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from erwin.training import fit, load_checkpoint
-from erwin.models import ErwinTransformer
-from erwin.datasets import EagleDataset
-from erwin.experiments import EagleModel
+from erwin.models.erwin import ErwinTransformer
+from erwin.experiments.datasets import EagleDataset
+from erwin.experiments.wrappers import EagleModel
 
 
 def parse_args():
