@@ -1,83 +1,77 @@
+from typing import Any, Callable, Dict
+
 import torch
 import torch.nn as nn
 
 from models import ErwinTransformer
 
 
-def measure_interaction(
-        model: ErwinTransformer,
+def compute_specific_grads(
+        model: nn.Module,
         x: torch.Tensor,
-        pos: torch.Tensor,
-        batch_idx: torch.Tensor,
         i: int,
-        j: int
+        j: int | None = None
     ) -> torch.Tensor:
     """
     Arguments:
-        model: Erwin transformer instance
-        x: tensor of shape (n * bs) x c_in
-    """
-    d = x.shape[-1]
-    out = model(x, pos, batch_idx)
-    jacobian = torch.zeros((d, d), device=x.device)
+        model: nn.Module model mapping a (n, d) tensor to a (n, d') tensor
+        x: tensor of shape (n, d) with grads enabled
+        i: i-th datapoint for which the gradients will be computed
+        j: j-th output point as target fn. If none, computes for all outputs.
 
-    for k in range(d):
-        if x.grad is not None:
-            x.grad.zero_()
-        out[j, k].backward(retain_graph=True)
-        grad_i = x.grad[i].detach().clone()
-        jacobian[k] = grad_i
+    Returns:
+        If j is specified:
+            (d, d') tensor containig the Jacobian d(out_j)/dx_i
+        Else:
+            (n, d, d') tensor containing Jacobians for each output point
+    """
+    out = model(x)
+    n, d = x.shape
+    d_prime = out.shape[-1]
+
+    j_is_set = j is not None
+
+    if j_is_set:
+        jacobian_shape = (d, d_prime)
+    else:
+        jacobian_shape = (n, d, d_prime)
+
+    jacobian = torch.zeros(jacobian_shape, device=x.device)
+    output_it = range(j, j + 1) if j is not None else range(n)
+
+    for j_prime in output_it:
+        for k in range(d_prime):
+            # compute jacobian by computing each row d(out[j', k]/dx_i)
+            # this is to prevent using jacobian function of PyTorch, which
+            # computes unnecessarily many gradients
+            if x.grad is not None:
+                x.grad.zero_()
+            out[j_prime, k].backward(retain_graph=True)
+            grad_i = x.grad[i].detach().clone()
+
+            if j_is_set:
+                jacobian[k] = grad_i
+            else:
+                jacobian[j_prime, k, :] = grad_i
 
     return jacobian
 
 
-def total_interaction(model: ErwinTransformer,
+def compute_interaction(model: ErwinTransformer,
         x: torch.Tensor,
         pos: torch.Tensor,
         batch_idx: torch.Tensor,
-        i: int):
-    n, d = x.shape
-    out = model(x, pos, batch_idx)
-    interaction_count = 0
+        i: int,
+        threshold: float = 0.0
+        ):
+    def erwin_wrapper(x):
+        return model(x, pos, batch_idx)
 
-    for j in range(n):
-        jacobian = torch.zeros((d, d), device=x.device)
-
-        for k in range(d):
-            if x.grad is not None:
-                x.grad.zero_()
-            out[j, k].backward(retain_graph=True)
-            grad_i = x.grad[i].detach().clone()
-            jacobian[k] = grad_i
-
-        if torch.linalg.matrix_norm(jacobian) > 0:
-            interaction_count += 1
+    jacobian = compute_specific_grads(erwin_wrapper, x, i)
+    thresholded = torch.linalg.matrix_norm(jacobian) > threshold
+    interaction_count = thresholded.sum()
 
     return interaction_count
-
-
-def simple_test():
-    """ Check Jacobian of identity map """
-    def model(x, *args):
-        return x
-
-    n, d = 4, 5
-    samples  = torch.randn(n, d, requires_grad=True)
-    tol = 1e-20
-    I = torch.eye(d, dtype=samples.dtype, device=samples.device)
-
-    for i in range(n):
-        for j in range(n):
-            jacob = measure_interaction(model, samples, None, None, i, j)
-
-            if i != j:
-                assert torch.all(torch.abs(jacob) < tol)
-            else:
-                assert torch.all(torch.abs(jacob - I) < tol)
-
-        # only dy_i/x_i should be 1, so should be 1
-        assert total_interaction(model, samples, None, None, i) == 1
-
 
 
 if __name__ == "__main__":
