@@ -1,0 +1,7 @@
+**/__pycache__/
+balltree/
+.vscode/
+datasets/
+experiments/checkpoints/
+experiments/wandb/
+shapenet_car/

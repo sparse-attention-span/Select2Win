@@ -45,6 +45,8 @@ else
     uv pip install wandb
     uv pip install tqdm
     uv pip install matplotlib
+
+    uv pip install spconv
 fi
 
 # install c++ balltree implementation
