@@ -19,7 +19,7 @@ def parse_args():
     parser.add_argument("--model", type=str, default="erwin", 
                         choices=('mpnn', 'pointtransformer', 'pointnetpp', 'erwin'))
     parser.add_argument("--data-path", type=str, default="../shapenet_car/preprocessed")
-    parser.add_argument("--size", type=str, default="small", 
+    parser.add_argument("--size", type=str, default="test", 
                         choices=('small', 'medium', 'large'))
     parser.add_argument("--num-epochs", type=int, default=100000)
     parser.add_argument("--batch-size", type=int, default=2)
@@ -37,6 +37,18 @@ def parse_args():
 
 
 erwin_configs = {
+    "test": {
+        "c_in": 64,
+        "c_hidden": 64,
+        "ball_sizes": [256,],
+        "enc_num_heads": [8,],
+        "enc_depths": [1,],
+        "dec_num_heads": [],
+        "dec_depths": [],
+        "strides": [],
+        "rotate": 0,
+        "mp_steps": 3,
+    },
     "small": {
         "c_in": 64,
         "c_hidden": 64,
