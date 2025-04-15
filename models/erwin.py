@@ -29,8 +29,7 @@ def scatter_mean(src: torch.Tensor, idx: torch.Tensor, num_receivers: int):
     count = torch.zeros(num_receivers, dtype=torch.long, device=src.device)
     result.index_add_(0, idx, src)
     count.index_add_(0, idx, torch.ones_like(idx, dtype=torch.long))
-    result = result / count.unsqueeze(1).clamp(min=1)
-    return result
+    return result / count.unsqueeze(1).clamp(min=1)
 
 
 class SwiGLU(nn.Module):
@@ -76,9 +75,13 @@ class MPNN(nn.Module):
         message = scatter_mean(messages, col, h.size(0))
         update = update_fn(torch.cat([h, message], dim=-1))
         return h + update
+    
+    @torch.no_grad()
+    def compute_edge_attr(self, pos, edge_index):
+        return pos[edge_index[0]] - pos[edge_index[1]]
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor, edge_index: torch.Tensor):
-        edge_attr = pos[edge_index[0]] - pos[edge_index[1]]
+        edge_attr = self.compute_edge_attr(pos, edge_index)
         for message_fn, update_fn in zip(self.message_fns, self.update_fns):
             x = self.layer(message_fn, update_fn, x, edge_attr, edge_index)
         return x
@@ -126,17 +129,15 @@ class BallPooling(nn.Module):
         if self.stride == 1: # no pooling
             return Node(x=node.x, pos=node.pos, batch_idx=node.batch_idx, children=node)
 
-        centers = reduce(node.pos, "(n s) d -> n d", 'mean', s=self.stride)
-        pos = rearrange(node.pos, "(n s) d -> n s d", s=self.stride)
+        with torch.no_grad():
+            batch_idx = node.batch_idx[::self.stride]
+            centers = reduce(node.pos, "(n s) d -> n d", 'mean', s=self.stride)
+            pos = rearrange(node.pos, "(n s) d -> n s d", s=self.stride)
+            rel_pos = rearrange(pos - centers[:, None], "n s d -> n (s d)")
 
-        x = torch.cat([
-            rearrange(node.x, "(n s) c -> n (s c)", s=self.stride),
-            rearrange(pos - centers[:, None], "n s d -> n (s d)"),
-        ], dim=1)
-        
+        x = torch.cat([rearrange(node.x, "(n s) c -> n (s c)", s=self.stride), rel_pos], dim=1)
         x = self.norm(self.proj(x))
 
-        batch_idx = node.batch_idx[::self.stride].contiguous()
         return Node(x=x, pos=centers, batch_idx=batch_idx, children=node)
 
 
@@ -156,14 +157,13 @@ class BallUnpooling(nn.Module):
         self.norm = nn.BatchNorm1d(dim)
 
     def forward(self, node: Node) -> Node:
-        rel_pos = rearrange(node.children.pos, "(n m) d -> n m d", m=self.stride) - node.pos[:, None]
+        with torch.no_grad():
+            rel_pos = rearrange(node.children.pos, "(n m) d -> n m d", m=self.stride) - node.pos[:, None]
+            rel_pos = rearrange(rel_pos, "n m d -> n (m d)")
 
-        x = torch.cat([
-            node.x,
-            rearrange(rel_pos, "n m d -> n (m d)")
-        ], dim=-1)
-
+        x = torch.cat([node.x, rel_pos], dim=-1)
         node.children.x = self.norm(node.children.x + rearrange(self.proj(x), "n (m d) -> (n m) d", m=self.stride))
+        
         return node.children
 
 
@@ -180,36 +180,35 @@ class BallMSA(nn.Module):
         self.pe_proj = nn.Linear(dimensionality, dim)
         self.sigma_att = nn.Parameter(-1 + 0.01 * torch.randn((1, num_heads, 1, 1)))
 
+    @torch.no_grad()
     def create_attention_mask(self, pos: torch.Tensor):
         """ Distance-based attention bias (eq. 10). """
         pos = rearrange(pos, '(n m) d -> n m d', m=self.ball_size)
         return self.sigma_att * torch.cdist(pos, pos, p=2).unsqueeze(1)
 
-    def rpe(self, pos: torch.Tensor):
+    @torch.no_grad()
+    def compute_rel_pos(self, pos: torch.Tensor):
         """ Relative position of leafs wrt the center of the ball (eq. 9). """
-        centers = reduce(pos, '(n m) d -> n d', 'mean', m=self.ball_size)
-        pos = rearrange(pos, '(n m) d -> n m d', m=self.ball_size)
-        rel_pos = rearrange(pos - centers[:, None], 'n m d -> (n m) d')
-        return self.pe_proj(rel_pos)
+        num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
+        pos = pos.view(num_balls, self.ball_size, dim)
+        return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
-        x = x + self.rpe(pos)
-        x = rearrange(self.qkv(x), "(n m) (H E K) -> n H m E K", H=self.num_heads, m=self.ball_size, K=3)
-        x = F.scaled_dot_product_attention(
-            *[t.squeeze(-1) for t in x.chunk(3, dim=-1)],
-            attn_mask=self.create_attention_mask(pos))
+        x = x + self.pe_proj(self.compute_rel_pos(pos))
+        q, k, v = rearrange(self.qkv(x), "(n m) (H E K) -> K n H m E", H=self.num_heads, m=self.ball_size, K=3)
+        x = F.scaled_dot_product_attention(q, k, v, attn_mask=self.create_attention_mask(pos))
         x = rearrange(x, "n H m E -> (n m) (H E)", H=self.num_heads, m=self.ball_size)
         return self.proj(x)
 
 
 class ErwinTransformerBlock(nn.Module):
-    def __init__(self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3):
+    def __init__(self, dim: int, num_heads: int, ball_size: int, mlp_ratio: int, dimensionality: int = 3):
         super().__init__()
         self.ball_size = ball_size
         self.norm1 = nn.RMSNorm(dim)
         self.norm2 = nn.RMSNorm(dim)
         self.BMSA = BallMSA(dim, num_heads, ball_size, dimensionality)
-        self.swiglu = SwiGLU(dim, dim * 4)
+        self.swiglu = SwiGLU(dim, dim * mlp_ratio)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
         x = x + self.BMSA(self.norm1(x), pos)
@@ -225,13 +224,14 @@ class BasicLayer(nn.Module):
         dim: int,
         num_heads: int,
         ball_size: int,
+        mlp_ratio: int,
         rotate: bool,
         dimensionality: int = 3,
 
     ):
         super().__init__()
 
-        self.blocks = nn.ModuleList([ErwinTransformerBlock(dim, num_heads, ball_size, dimensionality) for _ in range(depth)])
+        self.blocks = nn.ModuleList([ErwinTransformerBlock(dim, num_heads, ball_size, mlp_ratio, dimensionality) for _ in range(depth)])
         self.rotate = [i % 2 for i in range(depth)] if rotate else [False] * depth
 
         self.pool = lambda node: node
@@ -245,7 +245,7 @@ class BasicLayer(nn.Module):
     def forward(self, node: Node) -> Node:
         node = self.unpool(node)
 
-        if self.rotate[1]: # if rotation is enabled, it will be used in the second block
+        if len(self.rotate) > 1 and self.rotate[1]: # if rotation is enabled, it will be used in the second block
             assert node.tree_idx_rot is not None, "tree_idx_rot must be provided for rotation"
             tree_idx_rot_inv = torch.argsort(node.tree_idx_rot) # map from rotated to original
 
@@ -272,6 +272,7 @@ class ErwinTransformer(nn.Module):
         strides (List): list of strides for each encoder layer (reverse for decoder).
         rotate (int): angle of rotation for cross-ball interactions; if 0, no rotation.
         decode (bool): whether to decode or not. If not, returns latent representation at the coarsest level.
+        mlp_ratio (int): ratio of SWIGLU's hidden dim to a layer's hidden dim.
         dimensionality (int): dimensionality of the input data.
         mp_steps (int): number of message passing steps in the MPNN Embedding.
 
@@ -291,6 +292,7 @@ class ErwinTransformer(nn.Module):
         strides: List,
         rotate: int,
         decode: bool = True,
+        mlp_ratio: int = 4,
         dimensionality: int = 3,
         mp_steps: int = 3,
     ):
@@ -320,6 +322,7 @@ class ErwinTransformer(nn.Module):
                     num_heads=enc_num_heads[i],
                     ball_size=ball_sizes[i],
                     rotate=rotate > 0,
+                    mlp_ratio=mlp_ratio,
                     dimensionality=dimensionality,
                 )
             )
@@ -332,6 +335,7 @@ class ErwinTransformer(nn.Module):
             num_heads=enc_num_heads[-1],
             ball_size=ball_sizes[-1],
             rotate=rotate > 0,
+            mlp_ratio=mlp_ratio,
             dimensionality=dimensionality,
         )
 
@@ -347,6 +351,7 @@ class ErwinTransformer(nn.Module):
                         num_heads=dec_num_heads[i],
                         ball_size=ball_sizes[i],
                         rotate=rotate > 0,
+                        mlp_ratio=mlp_ratio,
                         dimensionality=dimensionality,
                     )
                 )

@@ -9,9 +9,9 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from erwin.training import fit
-from erwin.models import ErwinTransformer
-from erwin.datasets import CosmologyDataset
-from erwin.experiments import CosmologyModel
+from erwin.models.erwin import ErwinTransformer
+from erwin.experiments.datasets import CosmologyDataset
+from erwin.experiments.wrappers import CosmologyModel
 
 
 def parse_args():
@@ -52,7 +52,7 @@ erwin_configs = {
         "dec_num_heads": [2, 4, 8],
         "dec_depths": [2, 2, 2],
         "strides": [2, 2, 2],
-        "ball_sizes": [256, 256, 256],
+        "ball_sizes": [256, 256, 256, 256],
     },
     "medium": {
         "c_in": 64,
@@ -62,7 +62,7 @@ erwin_configs = {
         "dec_num_heads": [2, 4, 8],
         "dec_depths": [2, 2, 2],
         "strides": [2, 2, 2],
-        "ball_sizes": [256, 256, 256],
+        "ball_sizes": [256, 256, 256, 256],
     },
     "large": {
         "c_in": 128,
@@ -72,7 +72,7 @@ erwin_configs = {
         "dec_num_heads": [2, 4, 8],
         "dec_depths": [2, 2, 2],
         "strides": [2, 2, 2],
-        "ball_sizes": [256, 256, 256],
+        "ball_sizes": [256, 256, 256, 256],
     },
 }
 

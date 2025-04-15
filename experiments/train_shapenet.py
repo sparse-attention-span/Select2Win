@@ -9,9 +9,9 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from erwin.training import fit
-from erwin.models import ErwinTransformer
-from erwin.datasets import ShapenetCarDataset
-from erwin.experiments import ShapenetCarModel
+from erwin.models.erwin import ErwinTransformer
+from erwin.experiments.datasets import ShapenetCarDataset
+from erwin.experiments.wrappers import ShapenetCarModel
 
 
 def parse_args():

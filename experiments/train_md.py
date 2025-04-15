@@ -9,9 +9,9 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from erwin.training import fit
-from erwin.models import ErwinTransformer
-from erwin.datasets import MDDataset
-from erwin.experiments import MDModel
+from erwin.models.erwin import ErwinTransformer
+from erwin.experiments.datasets import MDDataset
+from erwin.experiments.wrappers import MDModel
 
 
 def parse_args():

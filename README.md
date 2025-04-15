@@ -81,6 +81,7 @@ config = {
     'strides': [2, 2, 2, 2],
     'ball_sizes': [128, 128, 128, 128, 128],
     'dimensionality': 3, # 3D space
+    'mlp_ratio': 4,
     'rotate': 0, # disable cross-ball interaction
 }
 
@@ -109,7 +110,8 @@ Due to the simplicity of implementation, Erwin is *blazing fast*. Below is the b
 
 ### Erwin has a minimal set of dependencies
 Erwin has a minimal number of dependencies:
-- PyTorch
+- PyTorch (version 2.5.0, CUDA 12.4)
+- NumPy
 - einops
 - Cython
 - torch-cluster (optional, is used to build a graph in the Embedding module)
@@ -136,20 +138,13 @@ The code is optimized for batched data coming in the form of a ragged array.
 
 ### Usage
 ```python
-import numpy as np
-from balltree import build_balltree, build_balltree_torch
+from balltree import build_balltree
 
 batch_size, num_points = 16, 8000
 
-# NumPy
-points = np.random.rand(num_points * bs, 2).astype(np.float32)
-batch_idx = np.repeat(np.arange(bs), num_points)
-tree_idx, tree_mask = build_balltree(points, batch_idx)
-
-# PyTorch
 points = torch.rand(num_points * bs, 2, dtype=torch.float32, device='cuda')
 batch_idx = torch.repeat_interleave(torch.arange(bs, device='cuda'), num_points)
-tree_idx, tree_mask = build_balltree_torch(points, batch_idx) # Returns tensors on the same device
+tree_idx, tree_mask = build_balltree(points, batch_idx) # Returns tensors on the same device
 ```
 
 ### Benchmark
