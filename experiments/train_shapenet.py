@@ -12,6 +12,7 @@ from erwin.training import fit
 from erwin.models.erwin import ErwinTransformer
 from erwin.experiments.datasets import ShapenetCarDataset
 from erwin.experiments.wrappers import ShapenetCarModel
+import time
 
 
 def parse_args():
@@ -155,4 +156,11 @@ if __name__ == "__main__":
     config = vars(args)
     config.update(model_config)
 
-    fit(config, model, optimizer, scheduler, train_loader, valid_loader, test_loader, 110, 160)
+    start_time = time.time()
+    num_epochs = args.num_epochs
+    fit(config, model, optimizer, scheduler, train_loader, valid_loader, test_loader, num_epochs, args.val_every_iter)
+    end_time = time.time()
+    total_time = end_time - start_time
+    time_per_epoch = total_time / num_epochs
+    print(f"Total training time: {total_time:.2f} seconds")
+    print(f"Time per epoch: {time_per_epoch:.2f} seconds")
