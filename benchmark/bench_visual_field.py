@@ -91,19 +91,22 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import math
 
+    EPS = 1e-20
+
     c_in = 16
     dimensionality = 2
     ball_sizes = [128]
     strides = []
 
     bs = 1
-    num_points = 1024
+    num_points = 512
+    i = 0
 
     node_features = torch.randn(num_points * bs, c_in, requires_grad=True)
     node_positions = torch.rand(num_points * bs, dimensionality)
     batch_idx = torch.repeat_interleave(torch.arange(bs), num_points)
 
-    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(12, 12))
+    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(18, 12), sharex=True, sharey=True)
     thetas = [0, 45.0]
 
     for theta, ax in zip(thetas, axes):
@@ -136,10 +139,8 @@ if __name__ == "__main__":
         grouped_points = node_positions[tree_idx]
 
         # compute FOV of point_1
-        i = 100
-        jacobian = compute_specific_grads(model_wrapper, node_features, i)
+        jacobian = compute_specific_grads(model_wrapper, node_features, i).detach()
         thresholded = torch.any(torch.abs(jacobian) > 0, dim=(-2, -1), keepdim=True).squeeze()
-        inverse_tree_idx = torch.argsort(tree_idx) # inverse permutation to get correct nodes
         affected_nodes = node_positions[thresholded]
 
         # visualize OG balltree
@@ -150,15 +151,26 @@ if __name__ == "__main__":
         for group_idx in range(num_balls):
             points = groups[group_idx]
             ax[0].scatter(points[:, 0], points[:, 1], color=colors(group_idx), s=50, marker="o")
-        ax[0].scatter(node_positions[i, 0], node_positions[i, 1], marker="x", s=100, color="black")
 
         # affected NB
         ax[1].scatter(node_positions[:, 0], node_positions[:, 1])
-        ax[1].scatter(affected_nodes[:, 0], affected_nodes[:, 1], color="green")
-        ax[1].scatter(node_positions[i, 0], node_positions[i, 1], marker="x", s=100, color="black")
+        ax[1].scatter(affected_nodes[:, 0], affected_nodes[:, 1], color="orange")
+
+        # grad norm - normalize values to see differences
+        grad_norms = torch.linalg.matrix_norm(jacobian, dim=(-2, -1))
+        nonzero_grad_idx = grad_norms > 0
+        grad_norms = torch.log10(grad_norms[nonzero_grad_idx] + EPS).cpu().numpy()
+        non_zero_grad_nodes = node_positions[nonzero_grad_idx]
+
+        print(nonzero_grad_idx.shape, grad_norms.shape, non_zero_grad_nodes.shape)
+        ax[2].scatter(non_zero_grad_nodes[:, 0], non_zero_grad_nodes[:, 1], c=grad_norms, cmap='viridis')
+
+        for subax in ax:
+            subax.scatter(node_positions[i, 0], node_positions[i, 1], marker="x", s=100, color="black")
 
         ax[0].set_title(f"Ball tree theta={theta}")
-        ax[1].set_title(f"Receptive field")
+        ax[1].set_title("Receptive field")
+        ax[2].set_title("Re-scaled log-gradient norm")
 
     plt.savefig("field.png")
 
