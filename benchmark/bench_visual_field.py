@@ -75,7 +75,7 @@ def measure_interaction_full(model: nn.Module,
         *args,
         threshold: float = 0.0
         ) -> float:
-    """ Computes \sum_j |d(out_j)/dx_i| > 1 """
+    """ Computes sum_j |d(out_j)/dx_i| > 1 """
 
     def model_wrapper(x):
         return model(x, *args)
@@ -87,26 +87,78 @@ def measure_interaction_full(model: nn.Module,
 
 
 if __name__ == "__main__":
-    config = {
-        "c_in": 16,
-        "c_hidden": 16,
-        "ball_sizes": [128],
-        "enc_num_heads": [1,],
-        "enc_depths": [2,],
-        "dec_num_heads": [],
-        "dec_depths": [],
-        "strides": [], # no coarsening
-        "mp_steps": 0, # no MPNN
-        "decode": True, # no decoder
-        "dimensionality": 2, # for visualization
-        "rotate": 0,
-    }
+    from balltree import build_balltree, build_balltree_with_rotations
+    import matplotlib.pyplot as plt
+    import math
 
-    model = ErwinTransformer(**config)
+    c_in = 16
+    dimensionality = 2
+    ball_sizes = [128]
+    strides = []
 
     bs = 1
     num_points = 1024
 
-    node_features = torch.randn(num_points * bs, config["c_in"], requires_grad=True)
-    node_positions = torch.rand(num_points * bs, config["dimensionality"])
+    node_features = torch.randn(num_points * bs, c_in, requires_grad=True)
+    node_positions = torch.rand(num_points * bs, dimensionality)
     batch_idx = torch.repeat_interleave(torch.arange(bs), num_points)
+
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(12, 12))
+    thetas = [0, 45.0]
+
+    for theta, ax in zip(thetas, axes):
+        print(f"Computing theta={theta}")
+        config = {
+            "c_in": c_in,
+            "c_hidden": 16,
+            "ball_sizes": ball_sizes,
+            "enc_num_heads": [1,],
+            "enc_depths": [2,],
+            "dec_num_heads": [],
+            "dec_depths": [],
+            "strides": strides, # no coarsening
+            "mp_steps": 0, # no MPNN
+            "decode": True, # no decoder
+            "dimensionality": dimensionality, # for visualization
+            "rotate": theta,
+        }
+
+        model = ErwinTransformer(**config)
+
+        def model_wrapper(x):
+            return model(x, node_positions, batch_idx)
+
+        # build tree
+        rad = math.radians(theta)
+        s, c = math.sin(rad), math.cos(rad)
+        rot_mat = torch.tensor([[c, -s], [s, c]])
+        tree_idx, tree_mask = build_balltree(node_positions @ rot_mat.T, batch_idx)
+        grouped_points = node_positions[tree_idx]
+
+        # compute FOV of point_1
+        i = 100
+        jacobian = compute_specific_grads(model_wrapper, node_features, i)
+        thresholded = torch.any(torch.abs(jacobian) > 0, dim=(-2, -1), keepdim=True).squeeze()
+        inverse_tree_idx = torch.argsort(tree_idx) # inverse permutation to get correct nodes
+        affected_nodes = node_positions[thresholded]
+
+        # visualize OG balltree
+        groups = grouped_points.reshape(-1, config["ball_sizes"][0], config["dimensionality"]) # (num balls, ball size, dim)
+        num_balls, ball_size, _ = groups.shape
+        colors = plt.cm.get_cmap('tab20', num_balls)
+
+        for group_idx in range(num_balls):
+            points = groups[group_idx]
+            ax[0].scatter(points[:, 0], points[:, 1], color=colors(group_idx), s=50, marker="o")
+        ax[0].scatter(node_positions[i, 0], node_positions[i, 1], marker="x", s=100, color="black")
+
+        # affected NB
+        ax[1].scatter(node_positions[:, 0], node_positions[:, 1])
+        ax[1].scatter(affected_nodes[:, 0], affected_nodes[:, 1], color="green")
+        ax[1].scatter(node_positions[i, 0], node_positions[i, 1], marker="x", s=100, color="black")
+
+        ax[0].set_title(f"Ball tree theta={theta}")
+        ax[1].set_title(f"Receptive field")
+
+    plt.savefig("field.png")
+
