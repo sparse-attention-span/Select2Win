@@ -63,9 +63,18 @@ def compute_specific_grads(
 def measure_interaction(model: nn.Module,
         x: torch.Tensor,
         i: int,
+        j: int
+        ) -> torch.Tensor:
+    jacobian = compute_specific_grads(model, x, i, j)
+    return jacobian
+
+
+def measure_interaction_full(model: nn.Module,
+        x: torch.Tensor,
+        i: int,
         *args,
         threshold: float = 0.0
-        ) -> int:
+        ) -> float:
     """ Computes \sum_j |d(out_j)/dx_i| > 1 """
 
     def model_wrapper(x):

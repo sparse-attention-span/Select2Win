@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from bench_visual_field import compute_specific_grads, measure_interaction
+from bench_visual_field import compute_specific_grads, measure_interaction_full as measure_interaction
 
 SEED = 42
 
