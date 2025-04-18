@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument("--model", type=str, default="erwin", 
                         choices=('mpnn', 'pointtransformer', 'pointnetpp', 'erwin'))
     parser.add_argument("--data-path", type=str, default="../shapenet_car/preprocessed")
-    parser.add_argument("--size", type=str, default="test", 
+    parser.add_argument("--size", type=str, default="small", 
                         choices=('small', 'medium', 'large'))
     parser.add_argument("--num-epochs", type=int, default=100000)
     parser.add_argument("--batch-size", type=int, default=2)
@@ -34,12 +34,13 @@ def parse_args():
     parser.add_argument("--test", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--knn", type=int, default=8)
+    parser.add_argument("--profile", action="store_true", help="Use minimal profile configuration for testing")
     
     return parser.parse_args()
 
 
 erwin_configs = {
-    "test": {
+    "profile": {
         "c_in": 64,
         "c_hidden": 64,
         "ball_sizes": [256,],
@@ -144,6 +145,8 @@ if __name__ == "__main__":
 
     if args.model == "erwin":
         model_config = erwin_configs[args.size]
+        if args.profile:
+            model_config = erwin_configs["profile"]
     else:
         raise NotImplementedError(f"Unknown model: {args.model}")
     
@@ -159,14 +162,14 @@ if __name__ == "__main__":
     num_epochs = args.num_epochs
 
     # Clear cache before starting
-    gc.collect()
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
+    # gc.collect()
+    # torch.cuda.empty_cache()
+    # torch.cuda.reset_peak_memory_stats()
 
     # Track starting memory
-    starting_mem = torch.cuda.memory_allocated() / 1024**2
-    starting_peak_mem = torch.cuda.max_memory_allocated() / 1024**2
-    print(f"Starting GPU memory: {starting_mem:.2f} MB")
+    # starting_mem = torch.cuda.memory_allocated() / 1024**2
+    # starting_peak_mem = torch.cuda.max_memory_allocated() / 1024**2
+    # print(f"Starting GPU memory: {starting_mem:.2f} MB")
 
     # Start timing here
     start_time = time.time()
@@ -178,11 +181,11 @@ if __name__ == "__main__":
     end_time = time.time()
 
     # Get peak memory stats
-    current_mem = torch.cuda.memory_allocated() / 1024**2
-    peak_mem = torch.cuda.max_memory_allocated() / 1024**2
-    print(f"Current GPU memory usage: {current_mem:.2f} MB")
-    print(f"Peak GPU memory usage: {peak_mem:.2f} MB")
-    print(f"Peak GPU memory increase: {peak_mem - starting_peak_mem:.2f} MB")
+    # current_mem = torch.cuda.memory_allocated() / 1024**2
+    # peak_mem = torch.cuda.max_memory_allocated() / 1024**2
+    # print(f"Current GPU memory usage: {current_mem:.2f} MB")
+    # print(f"Peak GPU memory usage: {peak_mem:.2f} MB")
+    # print(f"Peak GPU memory increase: {peak_mem - starting_peak_mem:.2f} MB")
     
     total_time = end_time - start_time
     time_per_epoch = total_time / num_epochs

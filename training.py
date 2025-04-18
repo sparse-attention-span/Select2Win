@@ -3,7 +3,8 @@ import torch
 import time
 import os
 from tqdm import tqdm
-
+from torch.profiler import profile, record_function, ProfilerActivity
+from contextlib import ExitStack
 
 def setup_wandb_logging(model, config, project_name="ballformer"):
     wandb.init(project=project_name, config=config, name=config["model"] + '_' + config["experiment"])
@@ -104,68 +105,78 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
     
     while global_step < max_steps:
         iterator = tqdm(train_loader, desc=f"Training (step {global_step + 1}/{max_steps})") if use_tqdm else train_loader
-        for batch in iterator:
-            if global_step >= max_steps:
-                break
+        
+        # Enter the profiling context only if "profile" is set in the config.
+        with ExitStack() as stack:
+            if config.get("profile"):
+                prof = stack.enter_context(profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True))
+                stack.enter_context(record_function("model_inference"))
+            
+            for batch in iterator:
+                if global_step >= max_steps:
+                    break
+                    
+                model.train()
+                batch = {k: v.cuda() for k, v in batch.items()}
                 
-            model.train()
-            batch = {k: v.cuda() for k, v in batch.items()}
-            
-            # measure runtime statistics
-            if global_step == timing_window_start:
-                timing_start = time.perf_counter()
-            
-            if global_step == timing_window_start + timing_window_size:
-                timing_end = time.perf_counter()
-                total_time = timing_end - timing_start
-                steps_per_second = timing_window_size / total_time
-                if config.get("use_wandb", False):
-                    wandb.log({"stats/steps_per_second": steps_per_second}, step=global_step)
+                # measure runtime statistics
+                if global_step == timing_window_start:
+                    timing_start = time.perf_counter()
+                
+                if global_step == timing_window_start + timing_window_size:
+                    timing_end = time.perf_counter()
+                    total_time = timing_end - timing_start
+                    steps_per_second = timing_window_size / total_time
+                    if config.get("use_wandb", False):
+                        wandb.log({"stats/steps_per_second": steps_per_second}, step=global_step)
+                    else:
+                        print(f"Steps per second: {steps_per_second:.2f}")
+                
+                stat_dict = train_step(model, batch, optimizer, scheduler)
+                
+                for k, v in stat_dict.items():
+                    if "lr" not in k:
+                        if k not in running_train_stats:
+                            running_train_stats[k] = 0
+                        running_train_stats[k] += v.cpu().detach()
+                num_train_batches += 1
+                
+                if use_tqdm:
+                    loss_keys = [k for k in stat_dict.keys() if "loss" in k]
+                    iterator.set_postfix({
+                        "step": f"{global_step + 1}/{max_steps}",
+                        **{k: f"{stat_dict[k].item():.4f}" for k in loss_keys}
+                    })
                 else:
-                    print(f"Steps per second: {steps_per_second:.2f}")
-            
-            stat_dict = train_step(model, batch, optimizer, scheduler)
-            
-            for k, v in stat_dict.items():
-                if "lr" not in k:
-                    if k not in running_train_stats:
-                        running_train_stats[k] = 0
-                    running_train_stats[k] += v.cpu().detach()
-            num_train_batches += 1
-            
-            if use_tqdm:
-                loss_keys = [k for k in stat_dict.keys() if "loss" in k]
-                iterator.set_postfix({
-                    "step": f"{global_step + 1}/{max_steps}",
-                    **{k: f"{stat_dict[k].item():.4f}" for k in loss_keys}
-                })
-            else:
-                wandb.log({f"{k}": v.item() for k, v in stat_dict.items() if "lr" not in k}, step=global_step)
-            
-            # Validation and checkpointing
-            if (global_step + 1) % config["val_every_iter"] == 0:
-                train_stats = {f"avg/{k}": v / num_train_batches for k, v in running_train_stats.items()}
+                    wandb.log({f"{k}": v.item() for k, v in stat_dict.items() if "lr" not in k}, step=global_step)
                 
-                running_train_stats = {}
-                num_train_batches = 0
+                # Validation and checkpointing
+                if (global_step + 1) % config["val_every_iter"] == 0:
+                    train_stats = {f"avg/{k}": v / num_train_batches for k, v in running_train_stats.items()}
+                    
+                    running_train_stats = {}
+                    num_train_batches = 0
+                    
+                    val_stats = validate(model, val_loader, config)
+                    current_val_loss = val_stats['avg/val/loss']
+                    
+                    if current_val_loss < best_val_loss:
+                        best_val_loss = current_val_loss
+                        save_checkpoint(model, optimizer, scheduler, config, best_val_loss, global_step)
+                        if not config.get("use_wandb", False):
+                            print(f"New best validation loss: {best_val_loss:.4f}, saved checkpoint")
+                    
+                    if config.get("use_wandb", False):
+                        wandb.log({**train_stats, **val_stats, 'global_step': global_step}, step=global_step)
+                    else:
+                        loss_keys = [k for k in val_stats.keys() if "loss" in k]
+                        for k in loss_keys: 
+                            print(f"Validation {k}: {val_stats[k]:.4f}")
                 
-                val_stats = validate(model, val_loader, config)
-                current_val_loss = val_stats['avg/val/loss']
+                global_step += 1
                 
-                if current_val_loss < best_val_loss:
-                    best_val_loss = current_val_loss
-                    save_checkpoint(model, optimizer, scheduler, config, best_val_loss, global_step)
-                    if not config.get("use_wandb", False):
-                        print(f"New best validation loss: {best_val_loss:.4f}, saved checkpoint")
-                
-                if config.get("use_wandb", False):
-                    wandb.log({**train_stats, **val_stats, 'global_step': global_step}, step=global_step)
-                else:
-                    loss_keys = [k for k in val_stats.keys() if "loss" in k]
-                    for k in loss_keys: 
-                        print(f"Validation {k}: {val_stats[k]:.4f}")
-            
-            global_step += 1
+        if config.get("profile"):
+            print(prof.key_averages().table(sort_by="cuda_memory_usage", row_limit=10))
 
     if test_loader is not None and config.get('test', False):
         print("Loading best checkpoint for testing...")
