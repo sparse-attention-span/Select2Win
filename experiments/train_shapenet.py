@@ -161,34 +161,6 @@ if __name__ == "__main__":
     config.update(model_config)
     num_epochs = args.num_epochs
 
-    # Clear cache before starting
-    # gc.collect()
-    # torch.cuda.empty_cache()
-    # torch.cuda.reset_peak_memory_stats()
-
-    # Track starting memory
-    # starting_mem = torch.cuda.memory_allocated() / 1024**2
-    # starting_peak_mem = torch.cuda.max_memory_allocated() / 1024**2
-    # print(f"Starting GPU memory: {starting_mem:.2f} MB")
-
-    # Start timing here
-    start_time = time.time()
-    
     # Run the training
     fit(config, model, optimizer, scheduler, train_loader, valid_loader, test_loader, num_epochs, args.val_every_iter)
-    
-    # End timing here
-    end_time = time.time()
-
-    # Get peak memory stats
-    # current_mem = torch.cuda.memory_allocated() / 1024**2
-    # peak_mem = torch.cuda.max_memory_allocated() / 1024**2
-    # print(f"Current GPU memory usage: {current_mem:.2f} MB")
-    # print(f"Peak GPU memory usage: {peak_mem:.2f} MB")
-    # print(f"Peak GPU memory increase: {peak_mem - starting_peak_mem:.2f} MB")
-    
-    total_time = end_time - start_time
-    time_per_epoch = total_time / num_epochs
-    print(f"Total training time: {total_time:.2f} seconds")
-    print(f"Time per epoch: {time_per_epoch:.2f} seconds")
     
