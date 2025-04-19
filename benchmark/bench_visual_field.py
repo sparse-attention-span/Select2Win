@@ -8,11 +8,8 @@ from models import ErwinTransformer
 
 
 def compute_specific_grads(
-        model: nn.Module,
-        x: torch.Tensor,
-        i: int,
-        j: int | None = None
-    ) -> torch.Tensor:
+    model: nn.Module, x: torch.Tensor, i: int, j: int | None = None
+) -> torch.Tensor:
     """
     Computes Jacobian d(out_j)/dx_i of output of model with respect to input.
 
@@ -33,7 +30,7 @@ def compute_specific_grads(
     device = x.device
     n_prime, d_prime = out.shape
 
-    if (j_is_set := j is not None):
+    if j_is_set := j is not None:
         jacobian_shape = (d_prime, d)
     else:
         jacobian_shape = (n_prime, d_prime, d)
@@ -60,22 +57,17 @@ def compute_specific_grads(
     return jacobian
 
 
-def measure_interaction(model: nn.Module,
-        x: torch.Tensor,
-        i: int,
-        j: int
-        ) -> torch.Tensor:
+def measure_interaction(
+    model: nn.Module, x: torch.Tensor, i: int, j: int
+) -> torch.Tensor:
     jacobian = compute_specific_grads(model, x, i, j)
     return jacobian
 
 
-def measure_interaction_full(model: nn.Module,
-        x: torch.Tensor,
-        i: int,
-        *args,
-        threshold: float = 0.0
-        ) -> float:
-    """ Computes sum_j |d(out_j)/dx_i| > 1 """
+def measure_interaction_full(
+    model: nn.Module, x: torch.Tensor, i: int, *args, threshold: float = 0.0
+) -> float:
+    """Computes sum_j |d(out_j)/dx_i| > 1"""
 
     def model_wrapper(x):
         return model(x, *args)
@@ -99,14 +91,16 @@ if __name__ == "__main__":
     strides = []
 
     bs = 1
-    num_points = 512
+    num_points = 1024
     i = 0
 
     node_features = torch.randn(num_points * bs, c_in, requires_grad=True)
     node_positions = torch.rand(num_points * bs, dimensionality)
     batch_idx = torch.repeat_interleave(torch.arange(bs), num_points)
 
-    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(18, 12), sharex=True, sharey=True)
+    fig, axes = plt.subplots(
+        nrows=2, ncols=3, figsize=(18, 12), sharex=True, sharey=True
+    )
     thetas = [0, 45.0]
 
     for theta, ax in zip(thetas, axes):
@@ -115,14 +109,18 @@ if __name__ == "__main__":
             "c_in": c_in,
             "c_hidden": 16,
             "ball_sizes": ball_sizes,
-            "enc_num_heads": [1,],
-            "enc_depths": [2,],
+            "enc_num_heads": [
+                1,
+            ],
+            "enc_depths": [
+                2,
+            ],
             "dec_num_heads": [],
             "dec_depths": [],
-            "strides": strides, # no coarsening
-            "mp_steps": 0, # no MPNN
-            "decode": True, # no decoder
-            "dimensionality": dimensionality, # for visualization
+            "strides": strides,  # no coarsening
+            "mp_steps": 0,  # no MPNN
+            "decode": True,  # no decoder
+            "dimensionality": dimensionality,  # for visualization
             "rotate": theta,
         }
 
@@ -140,17 +138,23 @@ if __name__ == "__main__":
 
         # compute FOV of point_1
         jacobian = compute_specific_grads(model_wrapper, node_features, i).detach()
-        thresholded = torch.any(torch.abs(jacobian) > 0, dim=(-2, -1), keepdim=True).squeeze()
+        thresholded = torch.any(
+            torch.abs(jacobian) > 0, dim=(-2, -1), keepdim=True
+        ).squeeze()
         affected_nodes = node_positions[thresholded]
 
         # visualize OG balltree
-        groups = grouped_points.reshape(-1, config["ball_sizes"][0], config["dimensionality"]) # (num balls, ball size, dim)
+        groups = grouped_points.reshape(
+            -1, config["ball_sizes"][0], config["dimensionality"]
+        )  # (num balls, ball size, dim)
         num_balls, ball_size, _ = groups.shape
-        colors = plt.cm.get_cmap('tab20', num_balls)
+        colors = plt.cm.get_cmap("tab20", num_balls)
 
         for group_idx in range(num_balls):
             points = groups[group_idx]
-            ax[0].scatter(points[:, 0], points[:, 1], color=colors(group_idx), s=50, marker="o")
+            ax[0].scatter(
+                points[:, 0], points[:, 1], color=colors(group_idx), s=50, marker="o"
+            )
 
         # affected NB
         ax[1].scatter(node_positions[:, 0], node_positions[:, 1])
@@ -163,14 +167,24 @@ if __name__ == "__main__":
         non_zero_grad_nodes = node_positions[nonzero_grad_idx]
 
         print(nonzero_grad_idx.shape, grad_norms.shape, non_zero_grad_nodes.shape)
-        ax[2].scatter(non_zero_grad_nodes[:, 0], non_zero_grad_nodes[:, 1], c=grad_norms, cmap='viridis')
+        ax[2].scatter(
+            non_zero_grad_nodes[:, 0],
+            non_zero_grad_nodes[:, 1],
+            c=grad_norms,
+            cmap="viridis",
+        )
 
         for subax in ax:
-            subax.scatter(node_positions[i, 0], node_positions[i, 1], marker="x", s=100, color="black")
+            subax.scatter(
+                node_positions[i, 0],
+                node_positions[i, 1],
+                marker="x",
+                s=100,
+                color="black",
+            )
 
         ax[0].set_title(f"Ball tree theta={theta}")
         ax[1].set_title("Receptive field")
-        ax[2].set_title("Re-scaled log-gradient norm")
+        ax[2].set_title("Log-gradient norm")
 
     plt.savefig("field.png")
-
