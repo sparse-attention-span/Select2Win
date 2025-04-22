@@ -161,6 +161,8 @@ if __name__ == "__main__":
     config.update(model_config)
     num_epochs = args.num_epochs
 
+    if args.profile:
+        gc.collect()
     # Run the training
     fit(config, model, optimizer, scheduler, train_loader, valid_loader, test_loader, num_epochs, args.val_every_iter)
     

@@ -3,8 +3,9 @@ import torch
 import time
 import os
 from tqdm import tqdm
-from torch.profiler import profile, record_function, ProfilerActivity
+from torch.profiler import profile, record_function, ProfilerActivity, tensorboard_trace_handler
 from contextlib import ExitStack
+import pandas as pd
 
 def setup_wandb_logging(model, config, project_name="ballformer"):
     wandb.init(project=project_name, config=config, name=config["model"] + '_' + config["experiment"])
@@ -108,8 +109,8 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
         
         # Enter the profiling context only if "profile" is set in the config.
         with ExitStack() as stack:
-            if config.get("profile"):
-                prof = stack.enter_context(profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True))
+            if config.get("profile"): 
+                prof = stack.enter_context(profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=True,with_flops=True, record_shapes=True, on_trace_ready=tensorboard_trace_handler("log_dir")  ))
                 stack.enter_context(record_function("model_inference"))
             
             for batch in iterator:
@@ -176,7 +177,23 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
                 global_step += 1
                 
         if config.get("profile"):
-            print(prof.key_averages().table(sort_by="cuda_memory_usage", row_limit=10))
+            # events = prof.key_averages()
+            # df = pd.DataFrame(map(vars, events))
+            # df = df.sort_values(by='device_memory_usage', ascending=False)
+            
+            # print("Available columns:", list(df.columns))
+            # keep = [
+            #     "key",
+            #     "cpu_time_total",
+            #     "device_time_total",
+            #     "cpu_memory_usage",
+            #     "device_memory_usage"
+            #     #"flops" doesn't work. need to use fvcore.
+            # ]
+            # df = df[keep]
+            # df = convert_units(df)
+            # print(df)
+            print(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=10))
 
     if test_loader is not None and config.get('test', False):
         print("Loading best checkpoint for testing...")
@@ -194,3 +211,19 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
             for k in loss_keys:
                 print(f"Test {k}: {test_stats[k]:.4f}")
     return model
+
+def convert_units(df):
+    # time: µs → ms
+    time_cols = [c for c in df.columns if "time_total" in c or "time_avg" in c]
+    for c in time_cols:
+        df[c] = df[c] / 1_000.0
+    # memory: bytes → MB
+    mem_cols = [c for c in df.columns if "memory_usage" in c]
+    for c in mem_cols:
+        df[c] = df[c] / (1024**2)
+        
+    df = df.rename(
+    columns={c: c.replace("time", "time_ms") for c in time_cols} |
+            {c: c.replace("memory_usage", "memory_MB") for c in mem_cols})
+    
+    return df
