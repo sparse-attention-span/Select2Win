@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_cluster
-from einops import rearrange, reduce, repeat
+from einops import einsum, rearrange, reduce, repeat
 
 from typing import Literal, List
 from dataclasses import dataclass
@@ -197,7 +197,7 @@ class NSAMSA(nn.Module):
     # Input x is already qkv'd
     # The shape is K n H m E (3, num_balls, num_heads, ball_size, feature_dim)
     # Return (num_points, topk)
-    def select_balls(self, q: torch.Tensor, k: torch.Tensor, topk: int):
+    def select_balls(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, topk: int):
         queries = rearrange(q, "n H m E -> H (n m) E")
         keys = rearrange(k, "n H m E -> H E n m")
         means = keys.mean(dim=-1)
@@ -207,32 +207,55 @@ class NSAMSA(nn.Module):
         # H (n m) topk
         _, topk_indices = torch.topk(similarity, topk, dim=-1)
         # (n m) H topk m E is the shape per point
-        
+
         keys = rearrange(keys, "H E n m -> H n m E")
         # n m H topk m E
         # Q.T @ K
-        
+
         # Expand (repeat) keys so that it can be indexed by torch.gather (B = n * m)
-        keys = repeat(keys, "... -> B ...", B=keys.shape[-3]*keys.shape[-2])
+        keys = repeat(keys, "... -> B ...", B=keys.shape[-3] * keys.shape[-2])
         # Rearrange B to be second dimension (topk has head in first dimension)
         keys = rearrange(keys, "nm h n m E -> h nm n m E")
+
         # Repeat topk indices again for torch.gather
-        topk_indices = repeat(topk_indices, "... -> ... m E", m = keys.shape[-2], E = keys.shape[-1])
-        
+        topk_indices = repeat(
+            topk_indices, "... -> ... m E", m=keys.shape[-2], E=keys.shape[-1]
+        )
+
+        values = rearrange(v, "n H m E ->  H n m E")
+        # n m H topk m Erearrange(q, "")
+        # Q.T @ K
+
+        # Expand (repeat) keys so that it can be indexed by torch.gather (B = n * m)
+        values = repeat(values, "... -> B ...", B=values.shape[-3] * values.shape[-2])
+        # Rearrange B to be second dimension (topk has head in first dimension)
+        values = rearrange(values, "nm h n m E -> h nm n m E")
+
+        desired_values = torch.gather(values, dim=2, index=topk_indices)
+
         # This is result, of shape H (n m) topk m E
         desired_keys = torch.gather(keys, dim=2, index=topk_indices)
-        return desired_keys
+        # Rearrange topk
+        desired_keys = rearrange(desired_keys, "... n m E -> ... (n m) E")
+
+        desired_values = rearrange(desired_values, "... n m E -> ... (n m) E")
+        return desired_keys, desired_values
     
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
         x = x + self.pe_proj(self.compute_rel_pos(pos))
         q, k, v = rearrange(self.qkv(x), "(n m) (H E K) -> K n H m E", H=self.num_heads, m=self.ball_size, K=3)
         
-        selected_ball_indices = self.select_balls(q, k, 3)
+        topk = 2 # lol
+        dk, dv = self.select_balls(q, k, v, topk)
+
+        q = rearrange(q, "n H m E -> H (n m) E")
+
+        attn = torch.softmax(einsum(q, dk, "H nm E, H nm km E -> H nm km") / (q.shape[-1] ** 0.5), dim=-1)
+        out = einsum(attn, dv, "H nm km, H nm km E -> H nm E")
+        out = rearrange(out, "H nm E -> nm (H E)")
         # Rearrange k into (n m)
-        
-        x = F.scaled_dot_product_attention(q, k, v, attn_mask=self.create_attention_mask(pos))
-        x = rearrange(x, "n H m E -> (n m) (H E)", H=self.num_heads, m=self.ball_size)
-        return self.proj(x)
+        # TODO NEEDS POSITION BIAS MASK
+        return self.proj(out)
 
 class BallMSA(nn.Module):
     """ Ball Multi-Head Self-Attention (BMSA) module (eq. 8). """
