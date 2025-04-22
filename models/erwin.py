@@ -191,6 +191,12 @@ class BallMSA(nn.Module):
         pos = rearrange(pos, '(n m) d -> n m d', m=self.ball_size)
         rel_pos = rearrange(pos - centers[:, None], 'n m d -> (n m) d')
         return self.pe_proj(rel_pos)
+    
+    def select_relevant_balls(self, x: torch.Tensor):
+        balls = rearrange(x, "(n m) F", m=self.ball_size)
+        ball_means = balls.mean()
+        
+        # for each point in x, want the index of the most relevant ball(s)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
         x = x + self.rpe(pos)
