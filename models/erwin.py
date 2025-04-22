@@ -298,7 +298,7 @@ class ErwinTransformerBlock(nn.Module):
         self.norm1 = nn.RMSNorm(dim)
         self.norm2 = nn.RMSNorm(dim)
         
-        self.BMSA = BallMSA(dim, num_heads, ball_size, dimensionality)
+        self.BMSA = NSAMSA(dim, num_heads, ball_size, dimensionality)
         self.swiglu = SwiGLU(dim, dim * mlp_ratio)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
