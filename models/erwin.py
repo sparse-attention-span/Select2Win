@@ -7,21 +7,24 @@ import torch.nn.functional as F
 import torch_cluster
 from einops import einsum, rearrange, reduce, repeat
 
+from .native_sparse_attention import SparseAttention # local file
 from typing import Literal, List
 from dataclasses import dataclass
+from native_sparse_attention_pytorch.compress_networks import GroupedMLP # lib
 
 from balltree import build_balltree_with_rotations
 
+MSATYPE = "LucidRains"
 
 def scatter_mean(src: torch.Tensor, idx: torch.Tensor, num_receivers: int):
-    """ 
+    """
     Averages all values from src into the receivers at the indices specified by idx.
 
     Args:
         src (torch.Tensor): Source tensor of shape (N, D).
         idx (torch.Tensor): Indices tensor of shape (N,).
         num_receivers (int): Number of receivers (usually the maximum index in idx + 1).
-    
+
     Returns:
         torch.Tensor: Result tensor of shape (num_receivers, D).
     """
@@ -39,13 +42,13 @@ class SwiGLU(nn.Module):
         self.w1 = nn.Linear(in_dim, dim)
         self.w2 = nn.Linear(in_dim, dim)
         self.w3 = nn.Linear(dim, in_dim)
-    
+
     def forward(self, x: torch.Tensor):
         return self.w3(self.w2(x) * F.silu(self.w1(x)))
 
 
 class MPNN(nn.Module):
-    """ 
+    """
     Message Passing Neural Network (see Gilmer et al., 2017).
         m_ij = MLP([h_i, h_j, pos_i - pos_j])       message
         m_i = mean(m_ij)                            aggregate
@@ -56,18 +59,18 @@ class MPNN(nn.Module):
         super().__init__()
         self.message_fns = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(2 * dim + dimensionality, dim), 
-                nn.GELU(), 
+                nn.Linear(2 * dim + dimensionality, dim),
+                nn.GELU(),
                 nn.LayerNorm(dim)
             ) for _ in range(mp_steps)
         ])
 
         self.update_fns = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(2 * dim, dim), 
+                nn.Linear(2 * dim, dim),
                 nn.LayerNorm(dim)
             ) for _ in range(mp_steps)
-        ])       
+        ])
 
     def layer(self, message_fn: nn.Module, update_fn: nn.Module, h: torch.Tensor, edge_attr: torch.Tensor, edge_index: torch.Tensor):
         row, col = edge_index
@@ -75,7 +78,7 @@ class MPNN(nn.Module):
         message = scatter_mean(messages, col, h.size(0))
         update = update_fn(torch.cat([h, message], dim=-1))
         return h + update
-    
+
     @torch.no_grad()
     def compute_edge_attr(self, pos, edge_index):
         return pos[edge_index[0]] - pos[edge_index[1]]
@@ -104,14 +107,14 @@ class ErwinEmbedding(nn.Module):
 class Node:
     """ Dataclass to store the hierarchical node information."""
     x: torch.Tensor
-    pos: torch.Tensor 
+    pos: torch.Tensor
     batch_idx: torch.Tensor
     tree_idx_rot: torch.Tensor | None = None
     children: Node | None = None
 
 
 class BallPooling(nn.Module):
-    """ 
+    """
     Pooling of leaf nodes in a ball (eq. 12):
         1. select balls of size 'stride'.
         2. concatenate leaf nodes inside each ball along with their relative positions to the ball center.
@@ -153,7 +156,7 @@ class BallUnpooling(nn.Module):
         super().__init__()
         self.stride = stride
         input_dim = stride * dim + stride * dimensionality
-        self.proj = nn.Linear(input_dim, stride * dim)         
+        self.proj = nn.Linear(input_dim, stride * dim)
         self.norm = nn.BatchNorm1d(dim)
 
     def forward(self, node: Node) -> Node:
@@ -163,7 +166,7 @@ class BallUnpooling(nn.Module):
 
         x = torch.cat([node.x, rel_pos], dim=-1)
         node.children.x = self.norm(node.children.x + rearrange(self.proj(x), "n (m d) -> (n m) d", m=self.stride))
-        
+
         return node.children
 
 
@@ -192,7 +195,7 @@ class NSAMSA(nn.Module):
         num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
         pos = pos.view(num_balls, self.ball_size, dim)
         return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
-        
+
     # Take in the entire dataset
     # Input x is already qkv'd
     # The shape is K n H m E (3, num_balls, num_heads, ball_size, feature_dim)
@@ -240,11 +243,12 @@ class NSAMSA(nn.Module):
 
         desired_values = rearrange(desired_values, "... n m E -> ... (n m) E")
         return desired_keys, desired_values
-    
+
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
+        print("start-", end='')
         x = x + self.pe_proj(self.compute_rel_pos(pos))
         q, k, v = rearrange(self.qkv(x), "(n m) (H E K) -> K n H m E", H=self.num_heads, m=self.ball_size, K=3)
-        
+
         topk = 2 # lol
         dk, dv = self.select_balls(q, k, v, topk)
 
@@ -255,6 +259,7 @@ class NSAMSA(nn.Module):
         out = rearrange(out, "H nm E -> nm (H E)")
         # Rearrange k into (n m)
         # TODO NEEDS POSITION BIAS MASK
+        print("finish")
         return self.proj(out)
 
 class BallMSA(nn.Module):
@@ -281,7 +286,7 @@ class BallMSA(nn.Module):
         """ Relative position of leafs wrt the center of the ball (eq. 9). """
         num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
         pos = pos.view(num_balls, self.ball_size, dim)
-        return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)        
+        return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
         x = x + self.pe_proj(self.compute_rel_pos(pos))
@@ -290,6 +295,65 @@ class BallMSA(nn.Module):
         x = rearrange(x, "n H m E -> (n m) (H E)", H=self.num_heads, m=self.ball_size)
         return self.proj(x)
 
+class LucidRains(nn.Module):
+    """ NSA wrapper disregarding ball structure """
+    def __init__(self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3):
+        super().__init__()
+        self.dim = dim
+        self.num_heads = num_heads
+        self.ball_size = ball_size
+
+        # SLIDING_WINDOW_SIZE = ball_size
+        # COMPRESS_BLOCK_SIZE = ball_size
+        # COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//2
+
+        # FINE_BLOCK_SIZE = ball_size
+        # NUM_FINE_SELECTED = 2
+
+        SLIDING_WINDOW_SIZE = ball_size//16
+        COMPRESS_BLOCK_SIZE = ball_size//16
+        COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//32
+
+        FINE_BLOCK_SIZE = ball_size//16
+        NUM_FINE_SELECTED = 1
+
+
+        assert dim % num_heads == 0
+
+        self.sparse_attn = SparseAttention(
+            dim=dim,
+            dim_head=dim//num_heads,
+            heads=num_heads,
+            sliding_window_size = SLIDING_WINDOW_SIZE,
+            compress_block_size = COMPRESS_BLOCK_SIZE,
+            compress_block_sliding_stride = COMPRESS_BLOCK_SLIDING_STRIDE,
+            compress_mlp = GroupedMLP(
+                dim_head = dim//num_heads,
+                compress_window_size = COMPRESS_BLOCK_SIZE,
+                heads = num_heads,
+            ),
+            selection_block_size = FINE_BLOCK_SIZE,
+            num_selected_blocks = NUM_FINE_SELECTED,
+            use_diff_topk = False,
+            query_heads_share_selected_kv = True,
+        )
+
+        self.pe_proj = nn.Linear(dimensionality, dim)
+
+    @torch.no_grad()
+    def compute_rel_pos(self, pos: torch.Tensor):
+        """ Relative position of leafs wrt the center of the ball (eq. 9). """
+        num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
+        pos = pos.view(num_balls, self.ball_size, dim)
+        return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
+
+    def forward(self, x: torch.Tensor, pos: torch.Tensor):
+        x = x + self.pe_proj(self.compute_rel_pos(pos))
+        # x = self.sparse_attn(x.unsqueeze(0)).squeeze(0)
+        x = rearrange(x, "(n m) E -> n m E", m=self.ball_size) # Batch balls instead of computing global attn
+        x = self.sparse_attn(x)
+        x = rearrange(x, "n m E -> (n m) E", m=self.ball_size)
+        return x
 
 class ErwinTransformerBlock(nn.Module):
     def __init__(self, dim: int, num_heads: int, ball_size: int, mlp_ratio: int, dimensionality: int = 3):
@@ -297,8 +361,10 @@ class ErwinTransformerBlock(nn.Module):
         self.ball_size = ball_size
         self.norm1 = nn.RMSNorm(dim)
         self.norm2 = nn.RMSNorm(dim)
-        
-        self.BMSA = NSAMSA(dim, num_heads, ball_size, dimensionality)
+
+        MSABase = {"BallMSA":BallMSA, "NSAMSA":NSAMSA, "LucidRains":LucidRains}[MSATYPE]
+
+        self.BMSA = MSABase(dim, num_heads, ball_size, dimensionality)
         self.swiglu = SwiGLU(dim, dim * mlp_ratio)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
@@ -334,13 +400,15 @@ class BasicLayer(nn.Module):
             self.unpool = BallUnpooling(dim, stride, dimensionality)
 
     def forward(self, node: Node) -> Node:
+        print("Erwin transformer blocks:")
         node = self.unpool(node)
 
         if len(self.rotate) > 1 and self.rotate[1]: # if rotation is enabled, it will be used in the second block
             assert node.tree_idx_rot is not None, "tree_idx_rot must be provided for rotation"
             tree_idx_rot_inv = torch.argsort(node.tree_idx_rot) # map from rotated to original
 
-        for rotate, blk in zip(self.rotate, self.blocks):
+        for i, (rotate, blk) in enumerate(zip(self.rotate, self.blocks)):
+            print(f"{i} ", end='')
             if rotate:
                 node.x = blk(node.x[node.tree_idx_rot], node.pos[node.tree_idx_rot])[tree_idx_rot_inv]
             else:
@@ -349,7 +417,7 @@ class BasicLayer(nn.Module):
 
 
 class ErwinTransformer(nn.Module):
-    """ 
+    """
     Erwin Transformer.
 
     Args:
@@ -391,7 +459,7 @@ class ErwinTransformer(nn.Module):
         assert len(enc_num_heads) == len(enc_depths) == len(ball_sizes)
         assert len(dec_num_heads) == len(dec_depths) == len(strides)
         assert len(strides) == len(ball_sizes) - 1
-        
+
         self.rotate = rotate
         self.decode = decode
         self.ball_sizes = ball_sizes
@@ -401,7 +469,9 @@ class ErwinTransformer(nn.Module):
 
         num_layers = len(enc_depths) - 1 # last one is a bottleneck
         num_hidden = [c_hidden] + [c_hidden * math.prod(strides[:i]) for i in range(1, num_layers + 1)]
-        
+
+        print(f"using {MSATYPE}")
+
         self.encoder = nn.ModuleList()
         for i in range(num_layers):
             self.encoder.append(
@@ -459,7 +529,7 @@ class ErwinTransformer(nn.Module):
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
-    
+
     def forward(self, node_features: torch.Tensor, node_positions: torch.Tensor, batch_idx: torch.Tensor, edge_index: torch.Tensor = None, tree_idx: torch.Tensor = None, tree_mask: torch.Tensor = None, radius: float = None, **kwargs):
         with torch.no_grad():
             # if not given, build the ball tree and radius graph
@@ -478,14 +548,17 @@ class ErwinTransformer(nn.Module):
             tree_idx_rot=None, # will be populated in the encoder
         )
 
-        for layer in self.encoder:
+        for i, layer in enumerate(self.encoder):
+            print(f"\n    encoder {i}")
             node.tree_idx_rot = tree_idx_rot.pop(0)
             node = layer(node)
 
         node.tree_idx_rot = tree_idx_rot.pop(0)
+        print(f"\n    bottleneck")
         node = self.bottleneck(node)
 
         if self.decode:
+            print(f"\n    decoder {i}")
             for layer in self.decoder:
                 node = layer(node)
             return node.x[tree_mask][torch.argsort(tree_idx[tree_mask])]
