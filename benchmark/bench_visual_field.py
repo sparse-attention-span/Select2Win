@@ -136,7 +136,7 @@ if __name__ == "__main__":
             num_heads=1,
             ball_size=ball_sizes[0],
             dimensionality=dimensionality,
-            topk=2,
+            topk=3,
         )
         # model = BallMSA(
         #     dim=c_in,

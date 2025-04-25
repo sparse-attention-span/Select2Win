@@ -6,6 +6,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_cluster
 from einops import einsum, rearrange, reduce, repeat
+from einops.layers.torch import Rearrange
+
 
 from typing import Literal, List
 from dataclasses import dataclass
@@ -216,12 +218,12 @@ class NativelySparseBallAttention(nn.Module):
         self.num_heads = num_heads
         self.ball_size = ball_size
         self.topk = topk
-        self.enable_gqa = False
 
         self.qkv = nn.Linear(dim, 3 * dim)
         self.proj = nn.Linear(dim, dim)
         self.pe_proj = nn.Linear(dimensionality, dim)
         self.sigma_att = nn.Parameter(-1 + 0.01 * torch.randn((1, num_heads, 1, 1)))
+        self.flex_attn_reshape = Rearrange("n H m E -> 1 H (n m) E")
 
     @torch.no_grad()
     def create_attention_mask(self, pos: torch.Tensor):
@@ -260,13 +262,20 @@ class NativelySparseBallAttention(nn.Module):
 
         def nsa_mask_mod(b: int, h: int, q_idx: int, kv_idx: int) -> bool:
             """Creates sparse attention mask NSA style"""
-            ball_idx = kv_idx // self.ball_size
-            is_selected = one_hot_selected_block_indices[q_idx, h, ball_idx]
+            kv_ball_idx = kv_idx // self.ball_size
+            is_selected = one_hot_selected_block_indices[q_idx, h, kv_ball_idx]
             return is_selected
+
+        def nsa_mask_mod(b: int, h: int, q_idx: int, kv_idx: int) -> bool:
+            """Ball attention"""
+            q_ball_idx = q_idx // self.ball_size
+            kv_ball_idx = kv_idx // self.ball_size
+            same_ball = q_ball_idx == kv_ball_idx
+            return same_ball
 
         block_mask = create_block_mask(
             nsa_mask_mod,
-            B=None,
+            B=1,
             H=self.num_heads,
             Q_LEN=num_points,
             KV_LEN=num_points,
@@ -276,6 +285,25 @@ class NativelySparseBallAttention(nn.Module):
         )
 
         return block_mask
+
+    @torch.no_grad()
+    def get_topk_idx(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
+        """
+        Get topk indices of keys with highest similarity
+
+        Arguments:
+            q: Tensor with shape n H m E
+            k: Tensor with same shape as q
+
+        Returns:
+            Tensor of shape: (n m) H topk
+        """
+        queries = rearrange(q, "n H m E -> H (n m) E")
+        keys_center = reduce(k, "n H m E -> H E n", "mean")
+        similarity = queries @ keys_center  # H (n m) n
+        _, topk_idx = torch.topk(similarity, self.topk, dim=-1)  # H (n m) topk
+        topk_idx = rearrange(topk_idx, "H nm topk -> nm H topk")
+        return topk_idx
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor) -> torch.Tensor:
         """
@@ -293,23 +321,17 @@ class NativelySparseBallAttention(nn.Module):
             K=3,
         )
 
-        # find top k balls for each point
-        queries = rearrange(q, "n H m E -> H (n m) E")
-        keys_center = reduce(k, "n H m E -> H E n", "mean")
-        similarity = queries @ keys_center  # H (n m) n
-        _, topk_idx = torch.topk(similarity, self.topk, dim=-1)  # H (n m) topk
-        topk_idx = rearrange(topk_idx, "H nm topk -> nm H topk")
-
-        # do attention stuff
-        q = rearrange(q, "n H m E -> 1 H (n m) E")
-        k = rearrange(q, "n H m E -> 1 H (n m) E")
-        v = rearrange(q, "n H m E -> 1 H (n m) E")
+        # create selection mask
+        topk_idx = self.get_topk_idx(q, k)
         attn_block_mask = self.create_selection_block_mask(topk_idx)
-        attn = flex_attention(
-            q, k, v, block_mask=attn_block_mask, enable_gqa=self.enable_gqa
-        )
 
-        #
+        # compute attention
+        q = self.flex_attn_reshape(q).contiguous()
+        k = self.flex_attn_reshape(q).contiguous()
+        v = self.flex_attn_reshape(q).contiguous()
+        attn = flex_attention(q, k, v, block_mask=attn_block_mask)
+
+        # projection onto correct dimension
         attn = rearrange(attn, "1 H nm E -> nm (H E)")
         out = self.proj(attn)
 
