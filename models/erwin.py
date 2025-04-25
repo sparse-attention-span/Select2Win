@@ -260,20 +260,19 @@ class NativelySparseBallAttention(nn.Module):
 
         def nsa_mask_mod(b: int, h: int, q_idx: int, kv_idx: int) -> bool:
             """Creates sparse attention mask NSA style"""
-            if b != q_idx:
-                return False
-
             ball_idx = kv_idx // self.ball_size
-            is_selected = one_hot_selected_block_indices[b, h, ball_idx]
+            is_selected = one_hot_selected_block_indices[q_idx, h, ball_idx]
             return is_selected
 
         block_mask = create_block_mask(
             nsa_mask_mod,
-            B=num_points,
+            B=None,
             H=self.num_heads,
             Q_LEN=num_points,
             KV_LEN=num_points,
-            # _compile=True,
+            BLOCK_SIZE=self.ball_size,
+            device=device,
+            _compile=True,
         )
 
         return block_mask
@@ -302,15 +301,19 @@ class NativelySparseBallAttention(nn.Module):
         topk_idx = rearrange(topk_idx, "H nm topk -> nm H topk")
 
         # do attention stuff
-        q = repeat(q, "n H m E -> (n m) H (n m) E")
-        k = repeat(k, "n H m E -> (n m) H (n m) E")
-        v = repeat(v, "n H m E -> (n m) H (n m) E")
+        q = rearrange(q, "n H m E -> 1 H (n m) E")
+        k = rearrange(q, "n H m E -> 1 H (n m) E")
+        v = rearrange(q, "n H m E -> 1 H (n m) E")
         attn_block_mask = self.create_selection_block_mask(topk_idx)
         attn = flex_attention(
             q, k, v, block_mask=attn_block_mask, enable_gqa=self.enable_gqa
         )
 
-        return attn
+        #
+        attn = rearrange(attn, "1 H nm E -> nm (H E)")
+        out = self.proj(attn)
+
+        return out
 
 
 class BallMSA(nn.Module):
