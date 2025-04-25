@@ -5,6 +5,7 @@ import torch.nn as nn
 
 sys.path.append("./")
 from models import ErwinTransformer
+from models.erwin import NativelySparseBallAttention, BallMSA
 
 
 def compute_specific_grads(
@@ -85,23 +86,24 @@ if __name__ == "__main__":
 
     EPS = 1e-20
 
-    c_in = 16
+    c_in = 4
     dimensionality = 2
-    ball_sizes = [128]
+    ball_sizes = [16]
     strides = []
 
     bs = 1
-    num_points = 1024
+    num_points = 256
     i = 0
 
-    node_features = torch.randn(num_points * bs, c_in, requires_grad=True)
+    node_features = torch.randn(num_points * bs, c_in)
     node_positions = torch.rand(num_points * bs, dimensionality)
     batch_idx = torch.repeat_interleave(torch.arange(bs), num_points)
 
     fig, axes = plt.subplots(
         nrows=2, ncols=3, figsize=(18, 12), sharex=True, sharey=True
     )
-    thetas = [0, 45.0]
+    thetas = [0]
+    # thetas = [0, 45.0]
 
     for theta, ax in zip(thetas, axes):
         print(f"Computing theta={theta}")
@@ -124,27 +126,48 @@ if __name__ == "__main__":
             "rotate": theta,
         }
 
-        model = ErwinTransformer(**config)
+        # model = ErwinTransformer(**config)
 
-        def model_wrapper(x):
-            return model(x, node_positions, batch_idx)
+        # def model_wrapper(x):
+        #     return model(x, node_positions, batch_idx)
+
+        model = NativelySparseBallAttention(
+            dim=c_in,
+            num_heads=1,
+            ball_size=ball_sizes[0],
+            dimensionality=dimensionality,
+            topk=2,
+        )
+        # model = BallMSA(
+        #     dim=c_in,
+        #     num_heads=1,
+        #     ball_size=ball_sizes[0],
+        #     dimensionality=dimensionality,
+        # )
 
         # build tree
         rad = math.radians(theta)
         s, c = math.sin(rad), math.cos(rad)
         rot_mat = torch.tensor([[c, -s], [s, c]])
         tree_idx, tree_mask = build_balltree(node_positions @ rot_mat.T, batch_idx)
-        grouped_points = node_positions[tree_idx]
+        node_positions = node_positions[tree_idx]
+        node_features = node_features[tree_idx]
+        node_features.requires_grad_(True)
+
+        def model_wrapper(x):
+            out = model(x, node_positions)
+            return out
 
         # compute FOV of point_1
         jacobian = compute_specific_grads(model_wrapper, node_features, i).detach()
         thresholded = torch.any(
             torch.abs(jacobian) > 0, dim=(-2, -1), keepdim=True
         ).squeeze()
+
         affected_nodes = node_positions[thresholded]
 
         # visualize OG balltree
-        groups = grouped_points.reshape(
+        groups = node_positions.reshape(
             -1, config["ball_sizes"][0], config["dimensionality"]
         )  # (num balls, ball size, dim)
         num_balls, ball_size, _ = groups.shape
@@ -166,7 +189,7 @@ if __name__ == "__main__":
         grad_norms = torch.log10(grad_norms[nonzero_grad_idx] + EPS).cpu().numpy()
         non_zero_grad_nodes = node_positions[nonzero_grad_idx]
 
-        print(nonzero_grad_idx.shape, grad_norms.shape, non_zero_grad_nodes.shape)
+        print(f"{non_zero_grad_nodes.shape[0]} points with non-zero grad")
         ax[2].scatter(
             non_zero_grad_nodes[:, 0],
             non_zero_grad_nodes[:, 1],
