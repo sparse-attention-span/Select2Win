@@ -12,6 +12,15 @@ from dataclasses import dataclass
 
 from balltree import build_balltree_with_rotations
 
+from torch.nn.attention.flex_attention import (
+    BlockMask,
+    flex_attention,
+    create_block_mask,
+)
+
+if torch.cuda.is_available():
+    flex_attention = torch.compile(flex_attention)
+
 
 def scatter_mean(src: torch.Tensor, idx: torch.Tensor, num_receivers: int):
     """
@@ -191,16 +200,23 @@ class BallUnpooling(nn.Module):
         return node.children
 
 
-class NSAMSA(nn.Module):
-    """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
+class NativelySparseBallAttention(nn.Module):
+    """Ball attention based on NSA."""
 
     def __init__(
-        self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3
+        self,
+        dim: int,
+        num_heads: int,
+        ball_size: int,
+        dimensionality: int = 3,
+        topk: int = 2,
     ):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
         self.ball_size = ball_size
+        self.topk = topk
+        self.enable_gqa = False
 
         self.qkv = nn.Linear(dim, 3 * dim)
         self.proj = nn.Linear(dim, dim)
@@ -220,57 +236,55 @@ class NSAMSA(nn.Module):
         pos = pos.view(num_balls, self.ball_size, dim)
         return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
 
-    # Take in the entire dataset
-    # Input x is already qkv'd
-    # The shape is K n H m E (3, num_balls, num_heads, ball_size, feature_dim)
-    # Return (num_points, topk)
-    def select_balls(
-        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, topk: int
-    ):
-        queries = rearrange(q, "n H m E -> H (n m) E")
-        keys = rearrange(k, "n H m E -> H E n m")
-        means = keys.mean(dim=-1)
-        # H (n m) n
-        similarity = queries @ means
-        H, nm, n = similarity.shape
-        # H (n m) topk
-        _, topk_indices = torch.topk(similarity, topk, dim=-1)
-        # (n m) H topk m E is the shape per point
+    @torch.no_grad()
+    def create_selection_block_mask(self, idx: torch.Tensor) -> BlockMask:
+        """
+        Creates block mask for sparse FlexAttention
 
-        keys = rearrange(keys, "H E n m -> H n m E")
-        # n m H topk m E
-        # Q.T @ K
+        Arguments:
+            idx: Tensor of shape (n m) H topk containing topk ball indices
 
-        # Expand (repeat) keys so that it can be indexed by torch.gather (B = n * m)
-        keys = repeat(keys, "... -> B ...", B=keys.shape[-3] * keys.shape[-2])
-        # Rearrange B to be second dimension (topk has head in first dimension)
-        keys = rearrange(keys, "nm h n m E -> h nm n m E")
+        Returns:
+            Block mask for corresponding points for FlexAttention
+        """
+        num_points = idx.shape[0]
+        num_balls = num_points // self.ball_size
+        device = idx.device
 
-        # Repeat topk indices again for torch.gather
-        topk_indices = repeat(
-            topk_indices, "... -> ... m E", m=keys.shape[-2], E=keys.shape[-1]
+        # create helper matrix for indices
+        # shape: (n m) H n
+        one_hot_selected_block_indices = torch.zeros(
+            (*idx.shape[:-1], num_balls), dtype=torch.bool, device=device
+        )
+        one_hot_selected_block_indices.scatter_(-1, idx, True)
+
+        def nsa_mask_mod(b: int, h: int, q_idx: int, kv_idx: int) -> bool:
+            """Creates sparse attention mask NSA style"""
+            if b != q_idx:
+                return False
+
+            ball_idx = kv_idx // self.ball_size
+            is_selected = one_hot_selected_block_indices[b, h, ball_idx]
+            return is_selected
+
+        block_mask = create_block_mask(
+            nsa_mask_mod,
+            B=num_points,
+            H=self.num_heads,
+            Q_LEN=num_points,
+            KV_LEN=num_points,
+            # _compile=True,
         )
 
-        values = rearrange(v, "n H m E ->  H n m E")
-        # n m H topk m Erearrange(q, "")
-        # Q.T @ K
+        return block_mask
 
-        # Expand (repeat) keys so that it can be indexed by torch.gather (B = n * m)
-        values = repeat(values, "... -> B ...", B=values.shape[-3] * values.shape[-2])
-        # Rearrange B to be second dimension (topk has head in first dimension)
-        values = rearrange(values, "nm h n m E -> h nm n m E")
+    def forward(self, x: torch.Tensor, pos: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of NSAMSA
 
-        desired_values = torch.gather(values, dim=2, index=topk_indices)
-
-        # This is result, of shape H (n m) topk m E
-        desired_keys = torch.gather(keys, dim=2, index=topk_indices)
-        # Rearrange topk
-        desired_keys = rearrange(desired_keys, "... n m E -> ... (n m) E")
-
-        desired_values = rearrange(desired_values, "... n m E -> ... (n m) E")
-        return desired_keys, desired_values
-
-    def forward(self, x: torch.Tensor, pos: torch.Tensor):
+        Arguments:
+            x: tensor of shape (n m) d, where n = #balls, m = ball size, d is dim
+        """
         x = x + self.pe_proj(self.compute_rel_pos(pos))
         q, k, v = rearrange(
             self.qkv(x),
@@ -280,19 +294,23 @@ class NSAMSA(nn.Module):
             K=3,
         )
 
-        topk = 2  # lol
-        dk, dv = self.select_balls(q, k, v, topk)
+        # find top k balls for each point
+        queries = rearrange(q, "n H m E -> H (n m) E")
+        keys_center = reduce(k, "n H m E -> H E n", "mean")
+        similarity = queries @ keys_center  # H (n m) n
+        _, topk_idx = torch.topk(similarity, self.topk, dim=-1)  # H (n m) topk
+        topk_idx = rearrange(topk_idx, "H nm topk -> nm H topk")
 
-        q = rearrange(q, "n H m E -> H (n m) E")
-
-        attn = torch.softmax(
-            einsum(q, dk, "H nm E, H nm km E -> H nm km") / (q.shape[-1] ** 0.5), dim=-1
+        # do attention stuff
+        q = repeat(q, "n H m E -> (n m) H (n m) E")
+        k = repeat(k, "n H m E -> (n m) H (n m) E")
+        v = repeat(v, "n H m E -> (n m) H (n m) E")
+        attn_block_mask = self.create_selection_block_mask(topk_idx)
+        attn = flex_attention(
+            q, k, v, block_mask=attn_block_mask, enable_gqa=self.enable_gqa
         )
-        out = einsum(attn, dv, "H nm km, H nm km E -> H nm E")
-        out = rearrange(out, "H nm E -> nm (H E)")
-        # Rearrange k into (n m)
-        # TODO NEEDS POSITION BIAS MASK
-        return self.proj(out)
+
+        return attn
 
 
 class BallMSA(nn.Module):
