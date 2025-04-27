@@ -288,14 +288,11 @@ class NSAMSA(nn.Module):
 
     @torch.no_grad()
     def compute_rel_pos(self, pos: torch.Tensor):
-        return 0
+        # return 0
         """Relative position of leafs wrt the center of the ball (eq. 9)."""
-        pos = rearrange(pos, "(n m) E -> n m E", m=self.ball_size)
-        # num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
-        # pos = pos.view(num_balls, self.ball_size, dim)
-        pos = pos - pos.mean(dim=1, keepdim=True)
-        return rearrange(pos, "n m E -> (n m) E")
-        # return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
+        num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
+        pos = pos.view(num_balls, self.ball_size, dim)
+        return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
 
     @torch.no_grad()
     def select_balls(
@@ -309,7 +306,8 @@ class NSAMSA(nn.Module):
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
         x = x + self.pe_proj(self.compute_rel_pos(pos))
-        qkv = repeat(x, "nm E -> nm (E K)", K=3)
+        qkv = repeat(x, "nm E -> nm E K", K=3)
+        qkv = rearrange(qkv, "nm E K -> nm (E K)")
         q, k, v = repeat(
             qkv,
             "(n m) (H E K) -> K b n H m E",
@@ -326,8 +324,8 @@ class NSAMSA(nn.Module):
 
         gates = straight_through(topk_values, 1.0) if self.use_diff_topk else None
 
-        fmask = topk_values > 1e-10
-        fmask = repeat(fmask, "b h nm topk -> b h nm (topk j)", j=self.ball_size)
+        # fmask = topk_values > 1e-10
+        # fmask = repeat(fmask, "b h nm topk -> b h nm (topk j)", j=self.ball_size)
 
         k = rearrange(k, "b n H m E -> b H n m E")
         v = rearrange(v, "b n H m E -> b H n m E")
@@ -358,7 +356,7 @@ class NSAMSA(nn.Module):
         q = rearrange(q, "b H n m E -> b H (n m) E")
         fsim = einsum(q, k, "b H nm E, b H nm sel E -> b H nm sel") * self.scale
         mask_value = max_neg_value(fsim)
-        fsim = fsim.masked_fill(~fmask, mask_value)
+        # fsim = fsim.masked_fill(~fmask, mask_value)
         fattn = fsim.softmax(dim=-1)
         fattn = einsum(fattn, v, "b H nm sel, b H nm sel E -> b H nm E")
 

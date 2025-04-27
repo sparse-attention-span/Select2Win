@@ -12,7 +12,9 @@ from models.erwin import NSAMSA, BallMSA
 from benchmark.bench_visual_field import compute_specific_grads
 
 
-def generate_point_cloud(n_groups=5, samples_per_group=4, std_dev=0.1, seed=None):
+def generate_point_cloud(
+    n_groups=5, samples_per_group=4, std_dev=0.1, seed=None, angle: float = 15
+):
     """
     Generates a 2D point cloud consisting of samples around the roots of z^n_groups = 1.
     """
@@ -46,17 +48,22 @@ def generate_point_cloud(n_groups=5, samples_per_group=4, std_dev=0.1, seed=None
 
     points = torch.vstack(points)
     labels = torch.tensor(labels)
-    centers = torch.vstack(means)
+    means = torch.vstack(means)
+    # means = points.clone()
 
-    rotation_deg = 15
-    theta = torch.deg2rad(torch.tensor(rotation_deg))
+    rotation_matrix = get_rotation_matrix(angle)
+    points = points @ rotation_matrix.T
+    means = means @ rotation_matrix.T
+
+    return points, labels, means
+
+
+def get_rotation_matrix(angle: float) -> torch.Tensor:
+    theta = torch.deg2rad(torch.tensor(angle))
     rotation_matrix = torch.tensor(
         [[torch.cos(theta), -torch.sin(theta)], [torch.sin(theta), torch.cos(theta)]]
     )
-    points = points @ rotation_matrix.T
-    centers = centers @ rotation_matrix.T
-
-    return points, labels, centers
+    return rotation_matrix
 
 
 if __name__ == "__main__":
@@ -67,25 +74,30 @@ if __name__ == "__main__":
     feature_dim = 2
     pos_dim = 2
     ball_size = 8
-    n_balls = 8
+    n_balls = 4
     num_points = ball_size * n_balls
     std_dev_samples = 0.1
     num_heads = 1
     topk = 2
     use_diff_topk = False
     thetas = [0]
+    assert 1 <= len(thetas) <= 2
 
     i = 0
 
+    batch_idx = torch.repeat_interleave(torch.arange(1), num_points)
     node_positions, _, node_features = generate_point_cloud(
         n_groups=n_balls, samples_per_group=ball_size, std_dev=std_dev_samples
     )
-    batch_idx = torch.repeat_interleave(torch.arange(1), num_points)
+    tree_idx, tree_mask = build_balltree(node_positions, batch_idx)
+    node_positions = node_positions[tree_idx]
+    node_features = node_features[tree_idx]
+    node_features.requires_grad_(True)
 
     fig, axes = plt.subplots(
-        nrows=len(thetas),
+        nrows=2,
         ncols=3,
-        figsize=(len(thetas) * 6, 12),
+        figsize=(18, 12),
         sharex=True,
         sharey=True,
     )
@@ -100,17 +112,12 @@ if __name__ == "__main__":
             topk=topk,
             use_diff_topk=use_diff_topk,
         )
-        model = BallMSA(
-            dim=feature_dim,
-            num_heads=num_heads,
-            ball_size=ball_size,
-            dimensionality=pos_dim,
-        )
-
-        tree_idx, tree_mask = build_balltree(node_positions, batch_idx)
-        node_positions = node_positions[tree_idx]
-        node_features = node_features[tree_idx]
-        node_features.requires_grad_(True)
+        # model = BallMSA(
+        #     dim=feature_dim,
+        #     num_heads=num_heads,
+        #     ball_size=ball_size,
+        #     dimensionality=pos_dim,
+        # )
 
         def model_wrapper(x):
             out = model(x, node_positions)
