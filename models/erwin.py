@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import torch_cluster
 from einops import einsum, rearrange, reduce, repeat
 
-from .native_sparse_attention import SparseAttention # local file
+from .native_sparse_attention import SparseAttention, create_sliding_mask, create_fine_mask # local file
 from typing import Literal, List
 from dataclasses import dataclass
 from native_sparse_attention_pytorch.compress_networks import GroupedMLP # lib
@@ -15,6 +15,13 @@ from native_sparse_attention_pytorch.compress_networks import GroupedMLP # lib
 from balltree import build_balltree_with_rotations
 
 MSATYPE = "LucidRains"
+USE_FLEX_ATTN = False
+PER_BALL = True
+DBGPRINTS = False
+
+def printd(**kwargs):
+    if DBGPRINTS:
+        print(**kwargs)
 
 def scatter_mean(src: torch.Tensor, idx: torch.Tensor, num_receivers: int):
     """
@@ -245,7 +252,7 @@ class NSAMSA(nn.Module):
         return desired_keys, desired_values
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
-        print("start-", end='')
+        printd("start-", end='')
         x = x + self.pe_proj(self.compute_rel_pos(pos))
         q, k, v = rearrange(self.qkv(x), "(n m) (H E K) -> K n H m E", H=self.num_heads, m=self.ball_size, K=3)
 
@@ -259,7 +266,7 @@ class NSAMSA(nn.Module):
         out = rearrange(out, "H nm E -> nm (H E)")
         # Rearrange k into (n m)
         # TODO NEEDS POSITION BIAS MASK
-        print("finish")
+        printd("finish")
         return self.proj(out)
 
 class BallMSA(nn.Module):
@@ -303,32 +310,34 @@ class LucidRains(nn.Module):
         self.num_heads = num_heads
         self.ball_size = ball_size
 
-        # SLIDING_WINDOW_SIZE = ball_size
-        # COMPRESS_BLOCK_SIZE = ball_size
-        # COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//2
+        if not PER_BALL:
+            SLIDING_WINDOW_SIZE = ball_size
+            COMPRESS_BLOCK_SIZE = ball_size
+            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//2
 
-        # FINE_BLOCK_SIZE = ball_size
-        # NUM_FINE_SELECTED = 2
+            FINE_BLOCK_SIZE = ball_size
+            NUM_FINE_SELECTED = 2
+        else:
+            SLIDING_WINDOW_SIZE = ball_size//8
+            COMPRESS_BLOCK_SIZE = ball_size//8
+            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//16
 
-        SLIDING_WINDOW_SIZE = ball_size//16
-        COMPRESS_BLOCK_SIZE = ball_size//16
-        COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//32
+            FINE_BLOCK_SIZE = ball_size//8
+            NUM_FINE_SELECTED = 1
 
-        FINE_BLOCK_SIZE = ball_size//16
-        NUM_FINE_SELECTED = 1
-
+        dim_head = dim//num_heads*2
 
         assert dim % num_heads == 0
 
         self.sparse_attn = SparseAttention(
-            dim=dim,
-            dim_head=dim//num_heads,
-            heads=num_heads,
+            dim = dim,
+            dim_head = dim_head,
+            heads = num_heads,
             sliding_window_size = SLIDING_WINDOW_SIZE,
             compress_block_size = COMPRESS_BLOCK_SIZE,
             compress_block_sliding_stride = COMPRESS_BLOCK_SLIDING_STRIDE,
             compress_mlp = GroupedMLP(
-                dim_head = dim//num_heads,
+                dim_head = dim_head,
                 compress_window_size = COMPRESS_BLOCK_SIZE,
                 heads = num_heads,
             ),
@@ -338,7 +347,10 @@ class LucidRains(nn.Module):
             query_heads_share_selected_kv = True,
         )
 
+        self.sliding_window_size = SLIDING_WINDOW_SIZE
+        self.selection_block_size = FINE_BLOCK_SIZE
         self.pe_proj = nn.Linear(dimensionality, dim)
+        self.B = None
 
     @torch.no_grad()
     def compute_rel_pos(self, pos: torch.Tensor):
@@ -349,10 +361,29 @@ class LucidRains(nn.Module):
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
         x = x + self.pe_proj(self.compute_rel_pos(pos))
-        # x = self.sparse_attn(x.unsqueeze(0)).squeeze(0)
-        x = rearrange(x, "(n m) E -> n m E", m=self.ball_size) # Batch balls instead of computing global attn
-        x = self.sparse_attn(x)
-        x = rearrange(x, "n m E -> (n m) E", m=self.ball_size)
+        # x = x.contiguous()
+        if PER_BALL:
+            x = rearrange(x, "(n m) E -> n m E", m=self.ball_size) # Batch balls instead of computing global attn
+        else:
+            x = x.unsqueeze(0)
+        # if not self.B:
+        #     self.B = x.shape[0]
+        #     printd("\nbatch is", self.B)
+        # else:
+        #     assert x.shape[0] == self.B
+        seq_len = x.shape[1]
+        if USE_FLEX_ATTN:
+            sliding_window_flex_mask = create_sliding_mask(seq_len, self.sliding_window_size)
+            fine_selection_flex_mask = create_fine_mask(seq_len, self.selection_block_size)
+            x = self.sparse_attn(x, sliding_window_flex_mask, fine_selection_flex_mask)
+        else:
+            x = self.sparse_attn(x)
+
+        if PER_BALL:
+            x = rearrange(x, "n m E -> (n m) E", m=self.ball_size)
+        else:
+            x = x.squeeze(0)
+
         return x
 
 class ErwinTransformerBlock(nn.Module):
@@ -400,7 +431,7 @@ class BasicLayer(nn.Module):
             self.unpool = BallUnpooling(dim, stride, dimensionality)
 
     def forward(self, node: Node) -> Node:
-        print("Erwin transformer blocks:")
+        printd("Erwin transformer blocks:")
         node = self.unpool(node)
 
         if len(self.rotate) > 1 and self.rotate[1]: # if rotation is enabled, it will be used in the second block
@@ -408,7 +439,7 @@ class BasicLayer(nn.Module):
             tree_idx_rot_inv = torch.argsort(node.tree_idx_rot) # map from rotated to original
 
         for i, (rotate, blk) in enumerate(zip(self.rotate, self.blocks)):
-            print(f"{i} ", end='')
+            printd(f"{i} ", end='')
             if rotate:
                 node.x = blk(node.x[node.tree_idx_rot], node.pos[node.tree_idx_rot])[tree_idx_rot_inv]
             else:
@@ -471,6 +502,9 @@ class ErwinTransformer(nn.Module):
         num_hidden = [c_hidden] + [c_hidden * math.prod(strides[:i]) for i in range(1, num_layers + 1)]
 
         print(f"using {MSATYPE}")
+        if MSATYPE == "LucidRains":
+            print("USE_FLEX_ATTN:", USE_FLEX_ATTN)
+            print("PER_BALL:", PER_BALL)
 
         self.encoder = nn.ModuleList()
         for i in range(num_layers):
@@ -549,16 +583,16 @@ class ErwinTransformer(nn.Module):
         )
 
         for i, layer in enumerate(self.encoder):
-            print(f"\n    encoder {i}")
+            printd(f"\n    encoder {i}")
             node.tree_idx_rot = tree_idx_rot.pop(0)
             node = layer(node)
 
         node.tree_idx_rot = tree_idx_rot.pop(0)
-        print(f"\n    bottleneck")
+        printd(f"\n    bottleneck")
         node = self.bottleneck(node)
 
         if self.decode:
-            print(f"\n    decoder {i}")
+            printd(f"\n    decoder {i}")
             for layer in self.decoder:
                 node = layer(node)
             return node.x[tree_mask][torch.argsort(tree_idx[tree_mask])]
