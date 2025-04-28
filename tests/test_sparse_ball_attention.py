@@ -7,7 +7,7 @@ from einops import rearrange
 
 sys.path.append("./")
 from models import ErwinTransformer
-from models.erwin import NSAMSA, BallMSA
+from models.erwin import NSAMSA, BallMSA, NativelySparseBallAttention
 
 from benchmark.bench_visual_field import compute_specific_grads
 
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     EPS = 1e-20
     feature_dim = 2
     pos_dim = 2
-    ball_size = 4
+    ball_size = 16
     n_balls = 8
     num_points = ball_size * n_balls
     std_dev_samples = 0.1
@@ -153,6 +153,13 @@ if __name__ == "__main__":
             topk=topk,
             use_diff_topk=use_diff_topk,
         )
+        # model = NativelySparseBallAttention(
+        #     dim=feature_dim,
+        #     num_heads=num_heads,
+        #     ball_size=ball_size,
+        #     dimensionality=pos_dim,
+        #     topk=topk,
+        # )
         # model = BallMSA(
         #     dim=feature_dim,
         #     num_heads=num_heads,
@@ -232,6 +239,8 @@ if __name__ == "__main__":
     plt.savefig("field.png")
 
     # check if everything OK
-    if run_unit_tests:
+    if len(debug_data) == 0:
+        print("Debug data is empty")
+    elif run_unit_tests:
         print("Running tests")
         test_data_roots(debug_data)

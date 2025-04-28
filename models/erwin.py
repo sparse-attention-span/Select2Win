@@ -10,11 +10,21 @@ import torch_cluster
 
 import einx
 from einops import einsum, rearrange, reduce, repeat
+from einops.layers.torch import Rearrange
 
 from typing import Literal, List
 from dataclasses import dataclass
 
 from balltree import build_balltree_with_rotations
+
+from torch.nn.attention.flex_attention import (
+    BlockMask,
+    flex_attention,
+    create_block_mask,
+)
+
+if torch.cuda.is_available():
+    flex_attention = torch.compile(flex_attention)
 
 
 def straight_through(t, target):
@@ -248,6 +258,147 @@ class BallMSA(nn.Module):
         return self.proj(x)
 
 
+class NativelySparseBallAttention(nn.Module):
+    """Ball attention based on NSA."""
+
+    def __init__(
+        self,
+        dim: int,
+        num_heads: int,
+        ball_size: int,
+        dimensionality: int = 3,
+        topk: int = 2,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.num_heads = num_heads
+        self.ball_size = ball_size
+        self.topk = topk
+
+        self.qkv = nn.Linear(dim, 3 * dim)
+        self.proj = nn.Linear(dim, dim)
+        self.pe_proj = nn.Linear(dimensionality, dim)
+        self.sigma_att = nn.Parameter(-1 + 0.01 * torch.randn((1, num_heads, 1, 1)))
+        self.flex_attn_reshape = Rearrange("n H m E -> 1 H (n m) E")
+
+    @torch.no_grad()
+    def create_attention_mask(self, pos: torch.Tensor):
+        """Distance-based attention bias (eq. 10)."""
+        pos = rearrange(pos, "(n m) d -> n m d", m=self.ball_size)
+        return self.sigma_att * torch.cdist(pos, pos, p=2).unsqueeze(1)
+
+    @torch.no_grad()
+    def compute_rel_pos(self, pos: torch.Tensor):
+        """Relative position of leafs wrt the center of the ball (eq. 9)."""
+        num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
+        pos = pos.view(num_balls, self.ball_size, dim)
+        return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
+
+    @torch.no_grad()
+    def create_selection_block_mask(self, idx: torch.Tensor) -> BlockMask:
+        """
+        Creates block mask for sparse FlexAttention
+
+        Arguments:
+            idx: Tensor of shape (n m) H topk containing topk ball indices
+
+        Returns:
+            Block mask for corresponding points for FlexAttention
+        """
+        num_points = idx.shape[0]
+        num_balls = num_points // self.ball_size
+        device = idx.device
+
+        # create helper matrix for indices
+        # shape: (n m) H n
+        one_hot_selected_block_indices = torch.zeros(
+            (*idx.shape[:-1], num_balls), dtype=torch.bool, device=device
+        )
+        one_hot_selected_block_indices.scatter_(-1, idx, True)
+
+        def nsa_mask_mod(b: int, h: int, q_idx: int, kv_idx: int) -> bool:
+            """Creates sparse attention mask NSA style"""
+            kv_ball_idx = kv_idx // self.ball_size
+            is_selected = one_hot_selected_block_indices[q_idx, h, kv_ball_idx]
+            return is_selected
+
+        # def nsa_mask_mod(b: int, h: int, q_idx: int, kv_idx: int) -> bool:
+        #     """Ball attention"""
+        #     q_ball_idx = q_idx // self.ball_size
+        #     kv_ball_idx = kv_idx // self.ball_size
+        #     same_ball = q_ball_idx == kv_ball_idx
+        #     return same_ball
+
+        block_mask = create_block_mask(
+            nsa_mask_mod,
+            B=1,
+            H=self.num_heads,
+            Q_LEN=num_points,
+            KV_LEN=num_points,
+            BLOCK_SIZE=self.ball_size,
+            device=device,
+            _compile=True,
+        )
+
+        return block_mask
+
+    @torch.no_grad()
+    def get_topk_idx(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
+        """
+        Get topk indices of keys with highest similarity
+
+        Arguments:
+            q: Tensor with shape n H m E
+            k: Tensor with same shape as q
+
+        Returns:
+            Tensor of shape: (n m) H topk
+        """
+        queries = rearrange(q, "n H m E -> H (n m) E")
+        keys_center = reduce(k, "n H m E -> H E n", "mean")
+        similarity = queries @ keys_center  # H (n m) n
+        _, topk_idx = torch.topk(similarity, self.topk, dim=-1)  # H (n m) topk
+        topk_idx = rearrange(topk_idx, "H nm topk -> nm H topk")
+        return topk_idx
+
+    def forward(
+        self, x: torch.Tensor, pos: torch.Tensor, debug: bool = False
+    ) -> torch.Tensor:
+        """
+        Forward pass of NSAMSA
+
+        Arguments:
+            x: tensor of shape (n m) d, where n = #balls, m = ball size, d is dim
+        """
+        x = x + self.pe_proj(self.compute_rel_pos(pos))
+        q, k, v = rearrange(
+            self.qkv(x),
+            "(n m) (H E K) -> K n H m E",
+            H=self.num_heads,
+            m=self.ball_size,
+            K=3,
+        )
+
+        # create selection mask
+        topk_idx = self.get_topk_idx(q, k)
+        attn_block_mask = self.create_selection_block_mask(topk_idx)
+
+        # compute attention
+        q = self.flex_attn_reshape(q).contiguous()
+        k = self.flex_attn_reshape(q).contiguous()
+        v = self.flex_attn_reshape(q).contiguous()
+        attn = flex_attention(q, k, v, block_mask=attn_block_mask)
+
+        # projection onto correct dimension
+        attn = rearrange(attn, "1 H nm E -> nm (H E)")
+        out = self.proj(attn)
+
+        if debug:
+            return out, {}
+
+        return out
+
+
 class NSAMSA(nn.Module):
     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
 
@@ -290,7 +441,7 @@ class NSAMSA(nn.Module):
         pos = pos.view(num_balls, self.ball_size, dim)
         return (pos - pos.mean(dim=1, keepdim=True)).contiguous().view(-1, dim)
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def select_balls(
         self, q: torch.Tensor, k: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
