@@ -16,15 +16,11 @@ from typing import Literal, List
 from dataclasses import dataclass
 
 from balltree import build_balltree_with_rotations
-
 from torch.nn.attention.flex_attention import (
     BlockMask,
     flex_attention,
     create_block_mask,
 )
-
-if torch.cuda.is_available():
-    flex_attention = torch.compile(flex_attention)
 
 
 def straight_through(t, target):
@@ -411,6 +407,9 @@ class NSAMSA(nn.Module):
         topk: int = 2,
         use_diff_topk: bool = True,
     ):
+        if torch.cuda.is_available():
+            flex_attention = torch.compile(flex_attention)
+
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
@@ -457,7 +456,6 @@ class NSAMSA(nn.Module):
 
         pos_emb = self.pe_proj(self.compute_rel_pos(pos))
         x = x + pos_emb
-        x = x.contiguous()
         qkv = repeat(x, "nm E -> nm E K", K=3)
         qkv = rearrange(qkv, "nm E K -> nm (E K)")
         # qkv = self.qkv(x)
@@ -487,9 +485,6 @@ class NSAMSA(nn.Module):
         k = rearrange(k, "b n H m E -> b H n m E")
         v = rearrange(v, "b n H m E -> b H n m E")
 
-        k = k.contiguous()
-        v = v.contiguous()
-
         k = repeat(k, "b H n m E -> b H nm n m E", nm=num_points)
         v = repeat(v, "b H n m E -> b H nm n m E", nm=num_points)
 
@@ -501,8 +496,6 @@ class NSAMSA(nn.Module):
         )
         print(f"gather shape: {topk_indices.shape}, {k.shape}")
 
-        k = k.contiguous()
-        v = v.contiguous()
         k = k.gather(3, topk_indices)
         v = v.gather(3, topk_indices)
 
@@ -515,28 +508,15 @@ class NSAMSA(nn.Module):
                 "b H nm topk, b H nm topk j E -> b H nm topk j E", gates, k
             )
 
-        k = k.contiguous()
-        v = v.contiguous()
-        k = rearrange(k, "b H nm w j E -> b H nm (w j) E")
-        v = rearrange(v, "b H nm w j E -> b H nm (w j) E")
+        k = rearrange(k, "1 H nm w j E -> (H nm) (w j) E")
+        v = rearrange(v, "1 H nm w j E -> (H nm) (w j) E")
 
-        # attention
         q = rearrange(q, "b n H m E -> b H n m E")
-        q = rearrange(q, "b H n m E -> b H (n m) E")
-        fsim = einsum(q, k, "b H nm E, b H nm sel E -> b H nm sel") * self.scale
-        # mask_value = max_neg_value(fsim)
-        # fsim = fsim.masked_fill(~fmask, mask_value)
-        fattn = fsim.softmax(dim=-1)
+        q = rearrange(q, "1 H n m E -> H (n m) E")
+        q = rearrange(q, "H nm E -> (H nm) 1 E")
 
-        if debug:
-            debug_data["fsim"] = fattn.detach().clone()
-
-        fattn = einsum(fattn, v, "b H nm sel, b H nm sel E -> b H nm E")
-
-        fattn = rearrange(fattn, "b H nm E -> nm b H E")
-        fattn = rearrange(fattn, "nm b H E -> (nm b) (H E)")
-        fattn = fattn.contiguous()
-        out = self.proj(fattn)
+        out = F.scaled_dot_product_attention(q, k, v)
+        out = out.squeeze()
 
         if debug:
             return out, debug_data
