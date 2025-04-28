@@ -13,7 +13,7 @@ from benchmark.bench_visual_field import compute_specific_grads
 
 
 def generate_point_cloud(
-    n_groups=5, samples_per_group=4, std_dev=0.1, seed=None, angle: float = 15
+    n_groups=5, samples_per_group=4, std_dev=0.1, seed=None, angle: float = 0.0
 ):
     """
     Generates a 2D point cloud consisting of samples around the roots of z^n_groups = 1.
@@ -35,27 +35,24 @@ def generate_point_cloud(
     )
 
     points = []
-    labels = []
-    means = []
+    point_features = []
 
-    for idx, root in enumerate(roots):
+    for root in roots:
         mean = root.expand(samples_per_group, 2)
         std = torch.full_like(mean, std_dev)
         samples = torch.normal(mean=mean, std=std)
         points.append(samples)
-        labels.extend([idx] * samples_per_group)
-        means.append(mean)
+        features = mean
+        point_features.append(features)
 
     points = torch.vstack(points)
-    labels = torch.tensor(labels)
-    means = torch.vstack(means)
-    # means = points.clone()
+    point_features = torch.vstack(point_features)
 
     rotation_matrix = get_rotation_matrix(angle)
     points = points @ rotation_matrix.T
-    means = means @ rotation_matrix.T
+    point_features = point_features @ rotation_matrix.T
 
-    return points, labels, means
+    return points.contiguous(), point_features.contiguous()
 
 
 def get_rotation_matrix(angle: float) -> torch.Tensor:
@@ -70,29 +67,44 @@ if __name__ == "__main__":
     from balltree import build_balltree
     import matplotlib.pyplot as plt
 
+    # if 32 * 8, with topk=4 and sort then not ok
+    # if 8 * 8, with even topk, then not ok (also with above fixed)
+
     EPS = 1e-20
     feature_dim = 2
     pos_dim = 2
-    ball_size = 8
-    n_balls = 4
+    ball_size = 16
+    n_balls = 8
     num_points = ball_size * n_balls
     std_dev_samples = 0.1
+    sample_angle = 15
     num_heads = 1
-    topk = 2
+    topk = 4
     use_diff_topk = False
     thetas = [0]
+    assert (num_points > 0) and (
+        (num_points & (num_points - 1)) == 0
+    ), "Num points must be power of 2"
     assert 1 <= len(thetas) <= 2
 
     i = 0
 
     batch_idx = torch.repeat_interleave(torch.arange(1), num_points)
-    node_positions, _, node_features = generate_point_cloud(
-        n_groups=n_balls, samples_per_group=ball_size, std_dev=std_dev_samples
+    node_positions, node_features = generate_point_cloud(
+        n_groups=n_balls,
+        samples_per_group=ball_size,
+        std_dev=std_dev_samples,
+        angle=sample_angle,
     )
     tree_idx, tree_mask = build_balltree(node_positions, batch_idx)
+    assert tree_mask.all()
     node_positions = node_positions[tree_idx]
     node_features = node_features[tree_idx]
     node_features.requires_grad_(True)
+
+    print(f"#poinst: {num_points}")
+    print(f"tree idx: {tree_idx.shape}; tree mask: {tree_mask.shape}")
+    print(f"Should have {ball_size * topk} (possibly +1) activated grads")
 
     fig, axes = plt.subplots(
         nrows=2,
@@ -148,10 +160,12 @@ if __name__ == "__main__":
         # grad norm - normalize values to see differences
         grad_norms = torch.linalg.matrix_norm(jacobian, dim=(-2, -1))
         nonzero_grad_idx = grad_norms > 0
-        grad_norms = torch.log10(grad_norms[nonzero_grad_idx] + EPS).cpu().numpy()
+        # grad_norms = torch.log(grad_norms[nonzero_grad_idx])
+        grad_norms = grad_norms[nonzero_grad_idx]
+        grad_norms = grad_norms.cpu().numpy()
         non_zero_grad_nodes = node_positions[nonzero_grad_idx]
 
-        print(f"{non_zero_grad_nodes.shape[0]} points with non-zero grad")
+        print(f"{nonzero_grad_idx.sum()} points with non-zero grad")
         ax[2].scatter(
             non_zero_grad_nodes[:, 0],
             non_zero_grad_nodes[:, 1],
@@ -171,5 +185,16 @@ if __name__ == "__main__":
         ax[0].set_title(f"Ball tree theta={theta}")
         ax[1].set_title("Receptive field")
         ax[2].set_title("Log-gradient norm")
+
+    # plot points after pos embedding
+    if feature_dim == 2:
+        node_features_with_emb = node_features.detach() + model.compute_rel_pos(
+            node_positions
+        )
+        axes[1, 1].scatter(node_features_with_emb[:, 0], node_features_with_emb[:, 1])
+        axes[1, 1].set_title("Features with pos embeddings")
+
+        axes[1, 0].scatter(node_features.detach()[:, 0], node_features.detach()[:, 1])
+        axes[1, 0].set_title("Features")
 
     plt.savefig("field.png")
