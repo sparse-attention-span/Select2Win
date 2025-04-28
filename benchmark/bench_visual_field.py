@@ -8,7 +8,11 @@ from models import ErwinTransformer
 
 
 def compute_specific_grads(
-    model: nn.Module, x: torch.Tensor, i: int, j: int | None = None
+    model: nn.Module,
+    x: torch.Tensor,
+    i: int,
+    j: int | None = None,
+    return_out: bool = False,
 ) -> torch.Tensor:
     """
     Computes Jacobian d(out_j)/dx_i of output of model with respect to input.
@@ -25,9 +29,15 @@ def compute_specific_grads(
         Otherwise:
             (n, d, d') tensor containing Jacobians d(out_j)/dx_i for each output point j
     """
-    out = model(x)
+    model_out = model(x)
     n, d = x.shape
     device = x.device
+
+    if return_out:
+        out = model_out[0]
+    else:
+        out = model_out
+
     n_prime, d_prime = out.shape
 
     if j_is_set := j is not None:
@@ -54,6 +64,8 @@ def compute_specific_grads(
             else:
                 jacobian[j_prime, k, :] = grad_i
 
+    if return_out:
+        return jacobian, model_out
     return jacobian
 
 
@@ -92,7 +104,7 @@ if __name__ == "__main__":
 
     bs = 1
     num_points = 1024
-    i = 0
+    monitor_idx = 0
 
     node_features = torch.randn(num_points * bs, c_in, requires_grad=True)
     node_positions = torch.rand(num_points * bs, dimensionality)
@@ -176,8 +188,8 @@ if __name__ == "__main__":
 
         for subax in ax:
             subax.scatter(
-                node_positions[i, 0],
-                node_positions[i, 1],
+                node_positions[monitor_idx, 0],
+                node_positions[monitor_idx, 1],
                 marker="x",
                 s=100,
                 color="black",

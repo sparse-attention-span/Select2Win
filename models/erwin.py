@@ -270,13 +270,10 @@ class NSAMSA(nn.Module):
 
         # self.qkv = nn.Linear(dim, 3 * dim)
         # self.proj = nn.Linear(dim, dim)
-        # self.pe_proj = nn.Linear(dimensionality, dim)
-
-        from einops.layers.torch import Rearrange
-
+        self.pe_proj = nn.Linear(dimensionality, dim)
         self.qkv = nn.Identity()
         self.proj = nn.Identity()
-        self.pe_proj = nn.Identity()
+        # self.pe_proj = nn.Identity()
 
         self.sigma_att = nn.Parameter(-1 + 0.01 * torch.randn((1, num_heads, 1, 1)))
 
@@ -288,11 +285,10 @@ class NSAMSA(nn.Module):
 
     @torch.no_grad()
     def compute_rel_pos(self, pos: torch.Tensor):
-        # return 0
         """Relative position of leafs wrt the center of the ball (eq. 9)."""
         num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
         pos = pos.view(num_balls, self.ball_size, dim)
-        return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
+        return (pos - pos.mean(dim=1, keepdim=True)).contiguous().view(-1, dim)
 
     @torch.no_grad()
     def select_balls(
@@ -304,10 +300,16 @@ class NSAMSA(nn.Module):
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_values, topk_indices
 
-    def forward(self, x: torch.Tensor, pos: torch.Tensor):
-        x = x + self.pe_proj(self.compute_rel_pos(pos))
+    def forward(self, x: torch.Tensor, pos: torch.Tensor, debug: bool = False):
+        if debug:
+            debug_data = {"ball_size": self.ball_size}
+
+        pos_emb = self.pe_proj(self.compute_rel_pos(pos))
+        x = x + pos_emb
+        x = x.contiguous()
         qkv = repeat(x, "nm E -> nm E K", K=3)
         qkv = rearrange(qkv, "nm E K -> nm (E K)")
+        # qkv = self.qkv(x)
         q, k, v = repeat(
             qkv,
             "(n m) (H E K) -> K b n H m E",
@@ -320,6 +322,10 @@ class NSAMSA(nn.Module):
         num_points = q.shape[1] * q.shape[3]
         topk_values, topk_indices = self.select_balls(q, k)
 
+        if debug:
+            debug_data["x_with_emb"] = x.detach().clone()
+            debug_data["topk_idx"] = topk_indices.detach().clone()
+
         print(topk_indices[0, 0, 0])
 
         gates = straight_through(topk_values, 1.0) if self.use_diff_topk else None
@@ -330,6 +336,9 @@ class NSAMSA(nn.Module):
         k = rearrange(k, "b n H m E -> b H n m E")
         v = rearrange(v, "b n H m E -> b H n m E")
 
+        k = k.contiguous()
+        v = v.contiguous()
+
         k = repeat(k, "b H n m E -> b H nm n m E", nm=num_points)
         v = repeat(v, "b H n m E -> b H nm n m E", nm=num_points)
 
@@ -339,15 +348,24 @@ class NSAMSA(nn.Module):
             m=self.ball_size,
             E=v.shape[-1],
         )
+        print(f"gather shape: {topk_indices.shape}, {k.shape}")
 
+        k = k.contiguous()
+        v = v.contiguous()
         k = k.gather(3, topk_indices)
         v = v.gather(3, topk_indices)
+
+        if debug:
+            debug_data["k_after_gather"] = k.detach().clone()
+            debug_data["v_after_gather"] = v.detach().clone()
 
         if self.use_diff_topk:
             k = einx.multiply(
                 "b H nm topk, b H nm topk j E -> b H nm topk j E", gates, k
             )
 
+        k = k.contiguous()
+        v = v.contiguous()
         k = rearrange(k, "b H nm w j E -> b H nm (w j) E")
         v = rearrange(v, "b H nm w j E -> b H nm (w j) E")
 
@@ -355,16 +373,25 @@ class NSAMSA(nn.Module):
         q = rearrange(q, "b n H m E -> b H n m E")
         q = rearrange(q, "b H n m E -> b H (n m) E")
         fsim = einsum(q, k, "b H nm E, b H nm sel E -> b H nm sel") * self.scale
-        mask_value = max_neg_value(fsim)
+        # mask_value = max_neg_value(fsim)
         # fsim = fsim.masked_fill(~fmask, mask_value)
         fattn = fsim.softmax(dim=-1)
+
+        if debug:
+            debug_data["fsim"] = fattn.detach().clone()
+
         fattn = einsum(fattn, v, "b H nm sel, b H nm sel E -> b H nm E")
 
         fattn = rearrange(fattn, "b H nm E -> nm b H E")
         fattn = rearrange(fattn, "nm b H E -> (nm b) (H E)")
+        fattn = fattn.contiguous()
+        out = self.proj(fattn)
+
+        if debug:
+            return out, debug_data
 
         # TODO NEEDS POSITION BIAS MASK
-        return self.proj(fattn)
+        return out
 
 
 class ErwinTransformerBlock(nn.Module):
