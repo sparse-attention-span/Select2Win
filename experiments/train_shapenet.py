@@ -12,13 +12,15 @@ from erwin.training import fit
 from erwin.models.erwin import ErwinTransformer
 from erwin.experiments.datasets import ShapenetCarDataset
 from erwin.experiments.wrappers import ShapenetCarModel
+import time
+import gc
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="erwin", 
                         choices=('mpnn', 'pointtransformer', 'pointnetpp', 'erwin'))
-    parser.add_argument("--data-path", type=str)
+    parser.add_argument("--data-path", type=str, default="../shapenet_car/preprocessed")
     parser.add_argument("--size", type=str, default="small", 
                         choices=('small', 'medium', 'large'))
     parser.add_argument("--num-epochs", type=int, default=100000)
@@ -32,11 +34,24 @@ def parse_args():
     parser.add_argument("--test", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--knn", type=int, default=8)
+    parser.add_argument("--profile", action="store_true", help="Use minimal profile configuration for testing")
     
     return parser.parse_args()
 
 
 erwin_configs = {
+    "profile": {
+        "c_in": 64,
+        "c_hidden": 64,
+        "ball_sizes": [256,],
+        "enc_num_heads": [8,],
+        "enc_depths": [1,],
+        "dec_num_heads": [],
+        "dec_depths": [],
+        "strides": [],
+        "rotate": 0,
+        "mp_steps": 3,
+    },
     "small": {
         "c_in": 64,
         "c_hidden": 64,
@@ -130,6 +145,8 @@ if __name__ == "__main__":
 
     if args.model == "erwin":
         model_config = erwin_configs[args.size]
+        if args.profile:
+            model_config = erwin_configs["profile"]
     else:
         raise NotImplementedError(f"Unknown model: {args.model}")
     
@@ -142,5 +159,10 @@ if __name__ == "__main__":
 
     config = vars(args)
     config.update(model_config)
+    num_epochs = args.num_epochs
 
-    fit(config, model, optimizer, scheduler, train_loader, valid_loader, test_loader, 110, 160)
+    if args.profile:
+        gc.collect()
+    # Run the training
+    fit(config, model, optimizer, scheduler, train_loader, valid_loader, test_loader, num_epochs, args.val_every_iter)
+    

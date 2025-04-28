@@ -1,9 +1,13 @@
+**/__pycache__/
 balltree/
 .vscode/
 datasets/
 experiments/checkpoints/
 experiments/wandb/
 shapenet_car/
+
+# will be way too big
+experiments/log_dir
 
 # ignore visualization script output
 *.pdf

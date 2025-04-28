@@ -19,9 +19,9 @@ USE_FLEX_ATTN = False
 PER_BALL = True
 DBGPRINTS = False
 
-def printd(**kwargs):
+def printd(*args, **kwargs):
     if DBGPRINTS:
-        print(**kwargs)
+        print(*args, **kwargs)
 
 def scatter_mean(src: torch.Tensor, idx: torch.Tensor, num_receivers: int):
     """
@@ -39,7 +39,8 @@ def scatter_mean(src: torch.Tensor, idx: torch.Tensor, num_receivers: int):
     count = torch.zeros(num_receivers, dtype=torch.long, device=src.device)
     result.index_add_(0, idx, src)
     count.index_add_(0, idx, torch.ones_like(idx, dtype=torch.long))
-    return result / count.unsqueeze(1).clamp(min=1)
+    result = result / count.unsqueeze(1).clamp(min=1)
+    return result
 
 
 class SwiGLU(nn.Module):
@@ -91,7 +92,7 @@ class MPNN(nn.Module):
         return pos[edge_index[0]] - pos[edge_index[1]]
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor, edge_index: torch.Tensor):
-        edge_attr = self.compute_edge_attr(pos, edge_index)
+        edge_attr = pos[edge_index[0]] - pos[edge_index[1]]
         for message_fn, update_fn in zip(self.message_fns, self.update_fns):
             x = self.layer(message_fn, update_fn, x, edge_attr, edge_index)
         return x
@@ -139,15 +140,17 @@ class BallPooling(nn.Module):
         if self.stride == 1: # no pooling
             return Node(x=node.x, pos=node.pos, batch_idx=node.batch_idx, children=node)
 
-        with torch.no_grad():
-            batch_idx = node.batch_idx[::self.stride]
-            centers = reduce(node.pos, "(n s) d -> n d", 'mean', s=self.stride)
-            pos = rearrange(node.pos, "(n s) d -> n s d", s=self.stride)
-            rel_pos = rearrange(pos - centers[:, None], "n s d -> n (s d)")
+        centers = reduce(node.pos, "(n s) d -> n d", 'mean', s=self.stride)
+        pos = rearrange(node.pos, "(n s) d -> n s d", s=self.stride)
 
-        x = torch.cat([rearrange(node.x, "(n s) c -> n (s c)", s=self.stride), rel_pos], dim=1)
+        x = torch.cat([
+            rearrange(node.x, "(n s) c -> n (s c)", s=self.stride),
+            rearrange(pos - centers[:, None], "n s d -> n (s d)"),
+        ], dim=1)
+
         x = self.norm(self.proj(x))
 
+        batch_idx = node.batch_idx[::self.stride].contiguous()
         return Node(x=x, pos=centers, batch_idx=batch_idx, children=node)
 
 
@@ -167,11 +170,13 @@ class BallUnpooling(nn.Module):
         self.norm = nn.BatchNorm1d(dim)
 
     def forward(self, node: Node) -> Node:
-        with torch.no_grad():
-            rel_pos = rearrange(node.children.pos, "(n m) d -> n m d", m=self.stride) - node.pos[:, None]
-            rel_pos = rearrange(rel_pos, "n m d -> n (m d)")
+        rel_pos = rearrange(node.children.pos, "(n m) d -> n m d", m=self.stride) - node.pos[:, None]
 
-        x = torch.cat([node.x, rel_pos], dim=-1)
+        x = torch.cat([
+            node.x,
+            rearrange(rel_pos, "n m d -> n (m d)")
+        ], dim=-1)
+
         node.children.x = self.norm(node.children.x + rearrange(self.proj(x), "n (m d) -> (n m) d", m=self.stride))
 
         return node.children
@@ -592,8 +597,8 @@ class ErwinTransformer(nn.Module):
         node = self.bottleneck(node)
 
         if self.decode:
-            printd(f"\n    decoder {i}")
             for layer in self.decoder:
+                printd(f"\n    decoder {i}")
                 node = layer(node)
             return node.x[tree_mask][torch.argsort(tree_idx[tree_mask])]
 
