@@ -70,16 +70,17 @@ def test_data_roots(debug_data):
     topk_idx = rearrange(topk_idx, "1 1 (n m) topk -> n m topk", n=ball_size)
 
     # check if selected indices agree with topk and OG values
-    k_after_gather = debug_data["k_after_gather"]
-    k_after_gather = rearrange(k_after_gather, "1 1 a b c d -> a b c d")
+    for selected_gather_mat in ["k_after_gather", "v_after_gather"]:
+        after_gather = debug_data[selected_gather_mat]
+        after_gather = rearrange(after_gather, "1 1 a b c d -> a b c d")
 
-    for idx, topk in enumerate(rearrange(topk_idx, "n m topk -> (n m) topk")):
-        for grp_idx, topk_grp_idx in enumerate(topk):
-            ball_start = topk_grp_idx * ball_size
-            ball_end = ball_start + ball_size
-            assert torch.all(
-                x[ball_start:ball_end] == k_after_gather[idx, grp_idx]
-            ), "selection not working correctly"
+        for idx, topk in enumerate(rearrange(topk_idx, "n m topk -> (n m) topk")):
+            for grp_idx, topk_grp_idx in enumerate(topk):
+                ball_start = topk_grp_idx * ball_size
+                ball_end = ball_start + ball_size
+                assert torch.all(
+                    x[ball_start:ball_end] == after_gather[idx, grp_idx]
+                ), ("selection not working correctly for " + selected_gather_mat)
 
     # check if points in ball select the same balls, since they have the same features
     # if added pos embs, then this is not always true
@@ -108,6 +109,8 @@ if __name__ == "__main__":
     topk = 2
     use_diff_topk = False
     thetas = [0]
+    run_unit_tests = True
+
     assert (num_points > 0) and (
         (num_points & (num_points - 1)) == 0
     ), "Num points must be power of 2"
@@ -229,4 +232,6 @@ if __name__ == "__main__":
     plt.savefig("field.png")
 
     # check if everything OK
-    test_data_roots(debug_data)
+    if run_unit_tests:
+        print("Running tests")
+        test_data_roots(debug_data)
