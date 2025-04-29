@@ -1,34 +1,33 @@
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Literal, List, Tuple
+from dataclasses import dataclass
 
 import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_cluster
-
-import einx
-from einops import einsum, rearrange, reduce, repeat
-from einops.layers.torch import Rearrange
-
-from typing import Literal, List
-from dataclasses import dataclass
-
-from balltree import build_balltree_with_rotations
 from torch.nn.attention.flex_attention import (
     BlockMask,
     flex_attention,
     create_block_mask,
 )
 
+import einx
+from einops import rearrange, reduce, repeat
+from einops.layers.torch import Rearrange
+
+from balltree import build_balltree_with_rotations  # pylint: disable=E0611
+
+
+if torch.cuda.is_available():
+    flex_attention = torch.compile(flex_attention)
+
 
 def straight_through(t, target):
+    """Straight through grad trick"""
     return t + (target - t).detach()
-
-
-def max_neg_value(t):
-    return -torch.finfo(t.dtype).max
 
 
 def scatter_mean(src: torch.Tensor, idx: torch.Tensor, num_receivers: int):
@@ -247,7 +246,7 @@ class BallMSA(nn.Module):
             m=self.ball_size,
             K=3,
         )
-        x = F.scaled_dot_product_attention(
+        x = F.scaled_dot_product_attention(  # pylint: disable=E1102
             q, k, v, attn_mask=self.create_attention_mask(pos)
         )
         x = rearrange(x, "n H m E -> (n m) (H E)", H=self.num_heads, m=self.ball_size)
@@ -395,15 +394,14 @@ class NativelySparseBallAttention(nn.Module):
         return out
 
 
-class tempIdfn(nn.Module):
-    """This class just mimicks QKV proj layer where the transformation is the id map"""
+class TempIdfn(nn.Module):
+    """This class just mimicks QKV proj layer where the transformation is a stacked id map"""
 
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
-        out = repeat(x, "nm E -> nm E K", K=3)
-        out = rearrange(out, "nm E K -> nm (E K)")
+        out = repeat(x, "nm E -> nm (E K)", K=3)
         return out
 
 
@@ -417,25 +415,24 @@ class NSAMSA(nn.Module):
         ball_size: int,
         dimensionality: int = 3,
         topk: int = 2,
-        use_diff_topk: bool = True,
+        use_diff_topk: bool = False,
+        debug: bool = False,
     ):
-        if torch.cuda.is_available():
-            flex_attention = torch.compile(flex_attention)
-
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
         self.ball_size = ball_size
         self.topk = topk
-        self.scale = dim**-0.5
         self.use_diff_topk = use_diff_topk
 
-        # self.qkv = nn.Linear(dim, 3 * dim)
-        # self.proj = nn.Linear(dim, dim)
-        # self.pe_proj = nn.Linear(dimensionality, dim)
-        self.qkv = tempIdfn()
-        self.proj = nn.Identity()
-        self.pe_proj = nn.Identity()
+        if debug:
+            self.qkv = TempIdfn()
+            self.proj = nn.Identity()
+            self.pe_proj = nn.Identity()
+        else:
+            self.qkv = nn.Linear(dim, 3 * dim)
+            self.proj = nn.Linear(dim, dim)
+            self.pe_proj = nn.Linear(dimensionality, dim)
 
         self.sigma_att = nn.Parameter(-1 + 0.01 * torch.randn((1, num_heads, 1, 1)))
 
@@ -458,12 +455,17 @@ class NSAMSA(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         queries = rearrange(q, "H n m E -> H (n m) E")
         keys = reduce(k, "H n m E -> H E n", "mean")
+        scale = queries.shape[-1] ** -0.5
         similarity = torch.bmm(queries, keys)
-        similarity = torch.softmax(similarity * self.scale, dim=-1)
+        similarity = torch.softmax(similarity * scale, dim=-1)
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_values, topk_indices
 
-    def forward(self, x: torch.Tensor, pos: torch.Tensor, debug: bool = False):
+    def forward(
+        self, x: torch.Tensor, pos: torch.Tensor, debug: bool = False
+    ) -> torch.Tensor:
+        num_points = x.shape[0]
+
         if debug:
             debug_data = {"ball_size": self.ball_size}
 
@@ -481,7 +483,7 @@ class NSAMSA(nn.Module):
         )
 
         # get topk balls
-        num_points = q.shape[1] * q.shape[2]
+        # topk_indices has shape: H nm topk
         topk_values, topk_indices = self.select_balls(q, k)
 
         if debug:
@@ -497,7 +499,7 @@ class NSAMSA(nn.Module):
         )
         k = repeat(k, "H n m E -> H nm n m E", nm=num_points)
         v = repeat(v, "H n m E -> H nm n m E", nm=num_points)
-        k = k.gather(2, topk_indices)
+        k = k.gather(2, topk_indices)  # shape: H nm topk m E
         v = v.gather(2, topk_indices)
 
         if debug:
@@ -506,14 +508,16 @@ class NSAMSA(nn.Module):
 
         if self.use_diff_topk:
             gates = straight_through(topk_values, 1.0)
-            k = einx.multiply("H nm topk, H nm topk j E -> H nm topk j E", gates, k)
+            k = einx.multiply("H nm topk, H nm topk m E -> H nm topk m E", gates, k)
 
         # TODO NEEDS POSITION BIAS MASK
         # compute attention
         q = rearrange(q, "H n m E -> (n m) H 1 E")
-        k = rearrange(k, "H nm w j E -> nm H (w j) E")
-        v = rearrange(v, "H nm w j E -> nm H (w j) E")
-        out = F.scaled_dot_product_attention(q, k, v, is_causal=False).squeeze()
+        k = rearrange(k, "H nm topk m E -> nm H (topk m) E")
+        v = rearrange(v, "H nm topk m E -> nm H (topk m) E")
+        out = F.scaled_dot_product_attention(  # pylint: disable=E1102
+            q, k, v, is_causal=False
+        ).squeeze()
 
         out = self.proj(out)
 
