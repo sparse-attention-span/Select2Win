@@ -395,6 +395,18 @@ class NativelySparseBallAttention(nn.Module):
         return out
 
 
+class tempIdfn(nn.Module):
+    """This class just mimicks QKV proj layer where the transformation is the id map"""
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        out = repeat(x, "nm E -> nm E K", K=3)
+        out = rearrange(out, "nm E K -> nm (E K)")
+        return out
+
+
 class NSAMSA(nn.Module):
     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
 
@@ -420,10 +432,10 @@ class NSAMSA(nn.Module):
 
         # self.qkv = nn.Linear(dim, 3 * dim)
         # self.proj = nn.Linear(dim, dim)
-        self.pe_proj = nn.Linear(dimensionality, dim)
-        self.qkv = nn.Identity()
+        # self.pe_proj = nn.Linear(dimensionality, dim)
+        self.qkv = tempIdfn()
         self.proj = nn.Identity()
-        # self.pe_proj = nn.Identity()
+        self.pe_proj = nn.Identity()
 
         self.sigma_att = nn.Parameter(-1 + 0.01 * torch.randn((1, num_heads, 1, 1)))
 
@@ -444,8 +456,8 @@ class NSAMSA(nn.Module):
     def select_balls(
         self, q: torch.Tensor, k: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        queries = rearrange(q, "n H m E -> H (n m) E")
-        keys = reduce(k, "n H m E -> H E n", "mean")
+        queries = rearrange(q, "H n m E -> H (n m) E")
+        keys = reduce(k, "H n m E -> H E n", "mean")
         similarity = torch.softmax(queries @ keys * self.scale, dim=-1)
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_values, topk_indices
@@ -454,37 +466,36 @@ class NSAMSA(nn.Module):
         if debug:
             debug_data = {"ball_size": self.ball_size}
 
+        # add positional encoding
         pos_emb = self.pe_proj(self.compute_rel_pos(pos))
         x = x + pos_emb
-        qkv = repeat(x, "nm E -> nm E K", K=3)
-        qkv = rearrange(qkv, "nm E K -> nm (E K)")
-        # qkv = self.qkv(x)
+
+        # get qkv matrices
         q, k, v = repeat(
-            qkv,
-            "(n m) (H E K) -> K n H m E",
+            self.qkv(x),
+            "(n m) (H E K) -> K H n m E",
             H=self.num_heads,
             m=self.ball_size,
             K=3,
         )
-        num_points = q.shape[0] * q.shape[2]
+
+        # get topk balls
+        num_points = q.shape[1] * q.shape[2]
         topk_values, topk_indices = self.select_balls(q, k)
 
         if debug:
             debug_data["x_with_emb"] = x.detach().clone()
             debug_data["topk_idx"] = topk_indices.detach().clone()
 
-        k = rearrange(k, "n H m E -> H n m E")
-        v = rearrange(v, "n H m E -> H n m E")
-
-        k = repeat(k, "H n m E -> H nm n m E", nm=num_points)
-        v = repeat(v, "H n m E -> H nm n m E", nm=num_points)
-
+        # gather all points in topk balls
         topk_indices = repeat(
             topk_indices,
             "H nm topk -> H nm topk m E",
             m=self.ball_size,
             E=v.shape[-1],
         )
+        k = repeat(k, "H n m E -> H nm n m E", nm=num_points)
+        v = repeat(v, "H n m E -> H nm n m E", nm=num_points)
         k = k.gather(2, topk_indices)
         v = v.gather(2, topk_indices)
 
@@ -497,16 +508,13 @@ class NSAMSA(nn.Module):
             k = einx.multiply("H nm topk, H nm topk j E -> H nm topk j E", gates, k)
 
         # TODO NEEDS POSITION BIAS MASK
-        # compute attention with (H nm) as batch dim
-        q = rearrange(q, "n H m E -> n m H E")
-        q = rearrange(q, "n m H E -> (n m) H 1 E")
+        # compute attention
+        q = rearrange(q, "H n m E -> (n m) H 1 E")
+        k = rearrange(k, "H nm w j E -> nm H (w j) E")
+        v = rearrange(v, "H nm w j E -> nm H (w j) E")
+        out = F.scaled_dot_product_attention(q, k, v, is_causal=False).squeeze()
 
-        k = rearrange(k, "H nm w j E -> nm H w j E")
-        k = rearrange(k, "nm H w j E -> nm H (w j) E")
-        v = rearrange(v, "H nm w j E -> nm H w j E")
-        v = rearrange(v, "nm H w j E -> nm H (w j) E")
-        out = F.scaled_dot_product_attention(q, k, v)
-        out = out.squeeze()
+        out = self.proj(out)
 
         if debug:
             return out, debug_data
