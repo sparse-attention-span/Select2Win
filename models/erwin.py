@@ -444,8 +444,8 @@ class NSAMSA(nn.Module):
     def select_balls(
         self, q: torch.Tensor, k: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        queries = rearrange(q, "b n H m E -> b H (n m) E")
-        keys = reduce(k, "b n H m E -> b H E n", "mean")
+        queries = rearrange(q, "n H m E -> H (n m) E")
+        keys = reduce(k, "n H m E -> H E n", "mean")
         similarity = torch.softmax(queries @ keys * self.scale, dim=-1)
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_values, topk_indices
@@ -461,67 +461,56 @@ class NSAMSA(nn.Module):
         # qkv = self.qkv(x)
         q, k, v = repeat(
             qkv,
-            "(n m) (H E K) -> K b n H m E",
-            b=1,
+            "(n m) (H E K) -> K n H m E",
             H=self.num_heads,
             m=self.ball_size,
             K=3,
         )
-        # tensor are of shape b h (n m) topk
-        num_points = q.shape[1] * q.shape[3]
+        num_points = q.shape[0] * q.shape[2]
         topk_values, topk_indices = self.select_balls(q, k)
 
         if debug:
             debug_data["x_with_emb"] = x.detach().clone()
             debug_data["topk_idx"] = topk_indices.detach().clone()
 
-        print(topk_indices[0, 0, 0])
+        k = rearrange(k, "n H m E -> H n m E")
+        v = rearrange(v, "n H m E -> H n m E")
 
-        gates = straight_through(topk_values, 1.0) if self.use_diff_topk else None
-
-        # fmask = topk_values > 1e-10
-        # fmask = repeat(fmask, "b h nm topk -> b h nm (topk j)", j=self.ball_size)
-
-        k = rearrange(k, "b n H m E -> b H n m E")
-        v = rearrange(v, "b n H m E -> b H n m E")
-
-        k = repeat(k, "b H n m E -> b H nm n m E", nm=num_points)
-        v = repeat(v, "b H n m E -> b H nm n m E", nm=num_points)
+        k = repeat(k, "H n m E -> H nm n m E", nm=num_points)
+        v = repeat(v, "H n m E -> H nm n m E", nm=num_points)
 
         topk_indices = repeat(
             topk_indices,
-            "b H nm topk -> b H nm topk m E",
+            "H nm topk -> H nm topk m E",
             m=self.ball_size,
             E=v.shape[-1],
         )
-        print(f"gather shape: {topk_indices.shape}, {k.shape}")
-
-        k = k.gather(3, topk_indices)
-        v = v.gather(3, topk_indices)
+        k = k.gather(2, topk_indices)
+        v = v.gather(2, topk_indices)
 
         if debug:
             debug_data["k_after_gather"] = k.detach().clone()
             debug_data["v_after_gather"] = v.detach().clone()
 
         if self.use_diff_topk:
-            k = einx.multiply(
-                "b H nm topk, b H nm topk j E -> b H nm topk j E", gates, k
-            )
+            gates = straight_through(topk_values, 1.0)
+            k = einx.multiply("H nm topk, H nm topk j E -> H nm topk j E", gates, k)
 
-        k = rearrange(k, "1 H nm w j E -> (H nm) (w j) E")
-        v = rearrange(v, "1 H nm w j E -> (H nm) (w j) E")
+        # TODO NEEDS POSITION BIAS MASK
+        # compute attention with (H nm) as batch dim
+        q = rearrange(q, "n H m E -> n m H E")
+        q = rearrange(q, "n m H E -> (n m) H 1 E")
 
-        q = rearrange(q, "b n H m E -> b H n m E")
-        q = rearrange(q, "1 H n m E -> H (n m) E")
-        q = rearrange(q, "H nm E -> (H nm) 1 E")
-
+        k = rearrange(k, "H nm w j E -> nm H w j E")
+        k = rearrange(k, "nm H w j E -> nm H (w j) E")
+        v = rearrange(v, "H nm w j E -> nm H w j E")
+        v = rearrange(v, "nm H w j E -> nm H (w j) E")
         out = F.scaled_dot_product_attention(q, k, v)
         out = out.squeeze()
 
         if debug:
             return out, debug_data
 
-        # TODO NEEDS POSITION BIAS MASK
         return out
 
 
