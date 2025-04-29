@@ -458,7 +458,8 @@ class NSAMSA(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         queries = rearrange(q, "H n m E -> H (n m) E")
         keys = reduce(k, "H n m E -> H E n", "mean")
-        similarity = torch.softmax(queries @ keys * self.scale, dim=-1)
+        similarity = torch.bmm(queries, keys)
+        similarity = torch.softmax(similarity * self.scale, dim=-1)
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_values, topk_indices
 
