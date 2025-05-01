@@ -1,0 +1,14 @@
+#!/bin/bash
+#SBATCH --partition=gpu_h100
+#SBATCH --gpus=1
+#SBATCH --job-name=sperwin_mem_test
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --time=00:30:00
+#SBATCH --output=slurm/mem_test.%A.%N.out
+
+source erwin/bin/activate
+
+cd experiments
+
+uv run train_shapenet.py --profile --num-epochs 100 --data-path "$HOME/data/mlcfd_data/preprocessed" --use-wandb 0 --msa-type LucidRains

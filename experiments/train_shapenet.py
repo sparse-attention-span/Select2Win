@@ -16,28 +16,54 @@ import time
 import gc
 
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="erwin", 
+    parser.add_argument("--model", type=str, default="erwin",
                         choices=('mpnn', 'pointtransformer', 'pointnetpp', 'erwin'))
     parser.add_argument("--data-path", type=str, default="../shapenet_car/preprocessed")
-    parser.add_argument("--size", type=str, default="small", 
+    parser.add_argument("--size", type=str, default="small",
                         choices=('small', 'medium', 'large'))
     parser.add_argument("--num-epochs", type=int, default=100000)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--use-wandb", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--val-every-iter", type=int, default=100, 
+    parser.add_argument("--val-every-iter", type=int, default=100,
                         help="Validation frequency")
-    parser.add_argument("--experiment", type=str, default="shapenet", 
+    parser.add_argument("--experiment", type=str, default="shapenet",
                         help="Experiment name in wandb")
     parser.add_argument("--test", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--knn", type=int, default=8)
     parser.add_argument("--profile", action="store_true", help="Use minimal profile configuration for testing")
-    
+    parser.add_argument("--msa-type", type=str, default="BallMSA",
+                        choices=["BallMSA", "NSAMSA", "LucidRains"])
+
+    parser.add_argument("--lucidrains-per-ball", type=bool)
+    parser.add_argument("--lucidrains-gqa", type=bool)
+    parser.add_argument("--lucidrains-triton-kernel", type=bool)
+    parser.add_argument("--lucidrains-flex-attn", type=bool)
+
+    parser.add_argument("--nsamsa-use-diff-topk", type=bool)
+
     return parser.parse_args()
 
+def get_attn_kwargs(args):
+    if args.msa_type == "LucidRains":
+        kwargs =  {
+            "per_ball": args.lucidrains_per_ball,
+            "use_flex_attn": args.lucidrains_flex_attn,
+            "use_triton_impl": args.lucidrains_triton_kernel,
+            "use_gqa": args.lucidrains_gqa,
+        }
+    if args.msa_type == "NSAMSA":
+        kwargs = {
+            "use_diff_topk": args.nsamsa_use_diff_topk
+        }
+    else:
+        kwargs = {}
+
+    return {k: v for k, v in kwargs.items() if v is not None}
 
 erwin_configs = {
     "profile": {
@@ -100,7 +126,7 @@ if __name__ == "__main__":
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
-    
+
     train_dataset = ShapenetCarDataset(
         data_path=args.data_path,
         split="train",
@@ -126,7 +152,7 @@ if __name__ == "__main__":
         collate_fn=train_dataset.collate_fn,
         num_workers=args.batch_size,
     )
-    
+
     valid_loader = DataLoader(
         valid_dataset,
         batch_size=args.batch_size,
@@ -134,7 +160,7 @@ if __name__ == "__main__":
         collate_fn=train_dataset.collate_fn,
         num_workers=args.batch_size,
     )
-    
+
     test_loader = DataLoader(
         test_dataset,
         batch_size=args.batch_size,
@@ -149,8 +175,8 @@ if __name__ == "__main__":
             model_config = erwin_configs["profile"]
     else:
         raise NotImplementedError(f"Unknown model: {args.model}")
-    
-    main_model = model_cls[args.model](**model_config)
+
+    main_model = model_cls[args.model](**model_config, **get_attn_kwargs(args))
     model = ShapenetCarModel(main_model).cuda()
     model = torch.compile(model)
 
@@ -165,4 +191,3 @@ if __name__ == "__main__":
         gc.collect()
     # Run the training
     fit(config, model, optimizer, scheduler, train_loader, valid_loader, test_loader, num_epochs, args.val_every_iter)
-    

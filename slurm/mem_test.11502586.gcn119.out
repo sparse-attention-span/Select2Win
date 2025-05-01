@@ -1,0 +1,156 @@
+2025-05-01 18:04:42.395586: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2025-05-01 18:04:42.407319: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:467] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1746115482.421029 1493282 cuda_dnn.cc:8579] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1746115482.425372 1493282 cuda_blas.cc:1407] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+W0000 00:00:1746115482.437418 1493282 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1746115482.437460 1493282 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1746115482.437466 1493282 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1746115482.437471 1493282 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+2025-05-01 18:04:42.441385: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F AVX512_VNNI AVX512_BF16 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+0
+using LucidRains
+USE_FLEX_ATTN: True
+USE_TRITON_IMPL: False
+USE_GQA: True
+PER_BALL: False
+Training (step 1/100):   0%|          | 0/350 [00:00<?, ?it/s]Training (step 1/100):   0%|          | 0/350 [00:12<?, ?it/s, step=1/100, train/loss=1.0337]Training (step 1/100):   0%|          | 1/350 [00:12<1:10:07, 12.06s/it, step=1/100, train/loss=1.0337]Training (step 1/100):   0%|          | 1/350 [00:12<1:10:07, 12.06s/it, step=2/100, train/loss=2.8912]Training (step 1/100):   0%|          | 1/350 [00:12<1:10:07, 12.06s/it, step=3/100, train/loss=1.0433]Training (step 1/100):   0%|          | 1/350 [00:12<1:10:07, 12.06s/it, step=4/100, train/loss=0.8760]Training (step 1/100):   1%|          | 4/350 [00:12<13:20,  2.31s/it, step=4/100, train/loss=0.8760]  Training (step 1/100):   1%|          | 4/350 [00:12<13:20,  2.31s/it, step=5/100, train/loss=0.9541]Training (step 1/100):   1%|          | 4/350 [00:12<13:20,  2.31s/it, step=6/100, train/loss=1.2950]Training (step 1/100):   1%|          | 4/350 [00:12<13:20,  2.31s/it, step=7/100, train/loss=0.9015]Training (step 1/100):   2%|▏         | 7/350 [00:12<06:14,  1.09s/it, step=7/100, train/loss=0.9015]Training (step 1/100):   2%|▏         | 7/350 [00:12<06:14,  1.09s/it, step=8/100, train/loss=0.7266]Training (step 1/100):   2%|▏         | 7/350 [00:12<06:14,  1.09s/it, step=9/100, train/loss=0.7252]Training (step 1/100):   2%|▏         | 7/350 [00:12<06:14,  1.09s/it, step=10/100, train/loss=0.6356]Training (step 1/100):   3%|▎         | 10/350 [00:12<03:35,  1.58it/s, step=10/100, train/loss=0.6356]Training (step 1/100):   3%|▎         | 10/350 [00:12<03:35,  1.58it/s, step=11/100, train/loss=0.7752]Training (step 1/100):   3%|▎         | 10/350 [00:12<03:35,  1.58it/s, step=12/100, train/loss=0.7916]Training (step 1/100):   3%|▎         | 10/350 [00:12<03:35,  1.58it/s, step=13/100, train/loss=0.8058]Training (step 1/100):   4%|▎         | 13/350 [00:12<02:16,  2.47it/s, step=13/100, train/loss=0.8058]Training (step 1/100):   4%|▎         | 13/350 [00:12<02:16,  2.47it/s, step=14/100, train/loss=0.5308]Training (step 1/100):   4%|▎         | 13/350 [00:12<02:16,  2.47it/s, step=15/100, train/loss=0.6103]Training (step 1/100):   4%|▎         | 13/350 [00:12<02:16,  2.47it/s, step=16/100, train/loss=0.6365]Training (step 1/100):   5%|▍         | 16/350 [00:12<01:32,  3.62it/s, step=16/100, train/loss=0.6365]Training (step 1/100):   5%|▍         | 16/350 [00:12<01:32,  3.62it/s, step=17/100, train/loss=0.6417]Training (step 1/100):   5%|▍         | 16/350 [00:12<01:32,  3.62it/s, step=18/100, train/loss=0.7123]Training (step 1/100):   5%|▍         | 16/350 [00:12<01:32,  3.62it/s, step=19/100, train/loss=0.7073]Training (step 1/100):   5%|▌         | 19/350 [00:12<01:04,  5.10it/s, step=19/100, train/loss=0.7073]Training (step 1/100):   5%|▌         | 19/350 [00:12<01:04,  5.10it/s, step=20/100, train/loss=0.7081]Training (step 1/100):   5%|▌         | 19/350 [00:12<01:04,  5.10it/s, step=21/100, train/loss=0.6733]Training (step 1/100):   5%|▌         | 19/350 [00:12<01:04,  5.10it/s, step=22/100, train/loss=0.5472]Training (step 1/100):   6%|▋         | 22/350 [00:12<00:47,  6.91it/s, step=22/100, train/loss=0.5472]Training (step 1/100):   6%|▋         | 22/350 [00:12<00:47,  6.91it/s, step=23/100, train/loss=0.4414]Training (step 1/100):   6%|▋         | 22/350 [00:12<00:47,  6.91it/s, step=24/100, train/loss=0.7354]Training (step 1/100):   6%|▋         | 22/350 [00:12<00:47,  6.91it/s, step=25/100, train/loss=0.4844]Training (step 1/100):   7%|▋         | 25/350 [00:12<00:36,  9.02it/s, step=25/100, train/loss=0.4844]Training (step 1/100):   7%|▋         | 25/350 [00:13<00:36,  9.02it/s, step=26/100, train/loss=0.4232]Training (step 1/100):   7%|▋         | 25/350 [00:13<00:36,  9.02it/s, step=27/100, train/loss=0.4154]Training (step 1/100):   7%|▋         | 25/350 [00:13<00:36,  9.02it/s, step=28/100, train/loss=0.4388]Training (step 1/100):   8%|▊         | 28/350 [00:13<00:28, 11.33it/s, step=28/100, train/loss=0.4388]Training (step 1/100):   8%|▊         | 28/350 [00:13<00:28, 11.33it/s, step=29/100, train/loss=0.5721]Training (step 1/100):   8%|▊         | 28/350 [00:13<00:28, 11.33it/s, step=30/100, train/loss=0.8453]Training (step 1/100):   8%|▊         | 28/350 [00:13<00:28, 11.33it/s, step=31/100, train/loss=0.5380]Training (step 1/100):   9%|▉         | 31/350 [00:13<00:23, 13.40it/s, step=31/100, train/loss=0.5380]Training (step 1/100):   9%|▉         | 31/350 [00:13<00:23, 13.40it/s, step=32/100, train/loss=0.4456]Training (step 1/100):   9%|▉         | 31/350 [00:13<00:23, 13.40it/s, step=33/100, train/loss=0.6743]Training (step 1/100):   9%|▉         | 31/350 [00:13<00:23, 13.40it/s, step=34/100, train/loss=0.5791]Training (step 1/100):  10%|▉         | 34/350 [00:13<00:20, 15.73it/s, step=34/100, train/loss=0.5791]Training (step 1/100):  10%|▉         | 34/350 [00:13<00:20, 15.73it/s, step=35/100, train/loss=0.5119]Training (step 1/100):  10%|▉         | 34/350 [00:13<00:20, 15.73it/s, step=36/100, train/loss=0.4350]Training (step 1/100):  10%|▉         | 34/350 [00:13<00:20, 15.73it/s, step=37/100, train/loss=0.4623]Training (step 1/100):  11%|█         | 37/350 [00:13<00:17, 17.60it/s, step=37/100, train/loss=0.4623]Training (step 1/100):  11%|█         | 37/350 [00:13<00:17, 17.60it/s, step=38/100, train/loss=0.6185]Training (step 1/100):  11%|█         | 37/350 [00:13<00:17, 17.60it/s, step=39/100, train/loss=0.5037]Training (step 1/100):  11%|█         | 37/350 [00:13<00:17, 17.60it/s, step=40/100, train/loss=0.4336]Training (step 1/100):  11%|█▏        | 40/350 [00:13<00:15, 19.43it/s, step=40/100, train/loss=0.4336]Training (step 1/100):  11%|█▏        | 40/350 [00:13<00:15, 19.43it/s, step=41/100, train/loss=0.5877]Training (step 1/100):  11%|█▏        | 40/350 [00:13<00:15, 19.43it/s, step=42/100, train/loss=0.6089]Training (step 1/100):  11%|█▏        | 40/350 [00:13<00:15, 19.43it/s, step=43/100, train/loss=0.3110]Training (step 1/100):  12%|█▏        | 43/350 [00:13<00:14, 20.75it/s, step=43/100, train/loss=0.3110]Training (step 1/100):  12%|█▏        | 43/350 [00:13<00:14, 20.75it/s, step=44/100, train/loss=0.8669]Training (step 1/100):  12%|█▏        | 43/350 [00:13<00:14, 20.75it/s, step=45/100, train/loss=0.3627]Training (step 1/100):  12%|█▏        | 43/350 [00:13<00:14, 20.75it/s, step=46/100, train/loss=0.2576]Training (step 1/100):  13%|█▎        | 46/350 [00:13<00:13, 22.37it/s, step=46/100, train/loss=0.2576]Training (step 1/100):  13%|█▎        | 46/350 [00:13<00:13, 22.37it/s, step=47/100, train/loss=0.4361]Training (step 1/100):  13%|█▎        | 46/350 [00:13<00:13, 22.37it/s, step=48/100, train/loss=0.4428]Training (step 1/100):  13%|█▎        | 46/350 [00:13<00:13, 22.37it/s, step=49/100, train/loss=0.5781]Training (step 1/100):  14%|█▍        | 49/350 [00:13<00:13, 22.59it/s, step=49/100, train/loss=0.5781]Training (step 1/100):  14%|█▍        | 49/350 [00:13<00:13, 22.59it/s, step=50/100, train/loss=0.3301]Training (step 1/100):  14%|█▍        | 49/350 [00:14<00:13, 22.59it/s, step=51/100, train/loss=0.5193]Training (step 1/100):  14%|█▍        | 49/350 [00:14<00:13, 22.59it/s, step=52/100, train/loss=0.6554]Training (step 1/100):  15%|█▍        | 52/350 [00:14<00:12, 23.87it/s, step=52/100, train/loss=0.6554]Training (step 1/100):  15%|█▍        | 52/350 [00:14<00:12, 23.87it/s, step=53/100, train/loss=0.5075]Training (step 1/100):  15%|█▍        | 52/350 [00:14<00:12, 23.87it/s, step=54/100, train/loss=0.7657]Training (step 1/100):  15%|█▍        | 52/350 [00:14<00:12, 23.87it/s, step=55/100, train/loss=0.3859]Training (step 1/100):  16%|█▌        | 55/350 [00:14<00:12, 24.42it/s, step=55/100, train/loss=0.3859]Training (step 1/100):  16%|█▌        | 55/350 [00:14<00:12, 24.42it/s, step=56/100, train/loss=0.4392]Training (step 1/100):  16%|█▌        | 55/350 [00:14<00:12, 24.42it/s, step=57/100, train/loss=0.4471]Training (step 1/100):  16%|█▌        | 55/350 [00:14<00:12, 24.42it/s, step=58/100, train/loss=0.4310]Training (step 1/100):  17%|█▋        | 58/350 [00:14<00:11, 25.24it/s, step=58/100, train/loss=0.4310]Training (step 1/100):  17%|█▋        | 58/350 [00:14<00:11, 25.24it/s, step=59/100, train/loss=0.4411]Training (step 1/100):  17%|█▋        | 58/350 [00:14<00:11, 25.24it/s, step=60/100, train/loss=0.2786]Training (step 1/100):  17%|█▋        | 58/350 [00:14<00:11, 25.24it/s, step=61/100, train/loss=0.3260]Training (step 1/100):  17%|█▋        | 61/350 [00:14<00:11, 25.56it/s, step=61/100, train/loss=0.3260]Training (step 1/100):  17%|█▋        | 61/350 [00:14<00:11, 25.56it/s, step=62/100, train/loss=0.3579]Training (step 1/100):  17%|█▋        | 61/350 [00:14<00:11, 25.56it/s, step=63/100, train/loss=0.4554]Training (step 1/100):  17%|█▋        | 61/350 [00:14<00:11, 25.56it/s, step=64/100, train/loss=0.2952]Training (step 1/100):  18%|█▊        | 64/350 [00:14<00:11, 25.96it/s, step=64/100, train/loss=0.2952]Training (step 1/100):  18%|█▊        | 64/350 [00:14<00:11, 25.96it/s, step=65/100, train/loss=0.2483]Training (step 1/100):  18%|█▊        | 64/350 [00:14<00:11, 25.96it/s, step=66/100, train/loss=0.4266]Training (step 1/100):  18%|█▊        | 64/350 [00:14<00:11, 25.96it/s, step=67/100, train/loss=0.5179]Training (step 1/100):  19%|█▉        | 67/350 [00:14<00:11, 25.42it/s, step=67/100, train/loss=0.5179]Training (step 1/100):  19%|█▉        | 67/350 [00:14<00:11, 25.42it/s, step=68/100, train/loss=0.3622]Training (step 1/100):  19%|█▉        | 67/350 [00:14<00:11, 25.42it/s, step=69/100, train/loss=0.7871]Training (step 1/100):  19%|█▉        | 67/350 [00:14<00:11, 25.42it/s, step=70/100, train/loss=0.2401]Training (step 1/100):  20%|██        | 70/350 [00:14<00:11, 24.53it/s, step=70/100, train/loss=0.2401]Training (step 1/100):  20%|██        | 70/350 [00:14<00:11, 24.53it/s, step=71/100, train/loss=0.5160]Training (step 1/100):  20%|██        | 70/350 [00:14<00:11, 24.53it/s, step=72/100, train/loss=0.3344]Training (step 1/100):  20%|██        | 70/350 [00:14<00:11, 24.53it/s, step=73/100, train/loss=0.5145]Training (step 1/100):  21%|██        | 73/350 [00:14<00:11, 24.38it/s, step=73/100, train/loss=0.5145]Training (step 1/100):  21%|██        | 73/350 [00:14<00:11, 24.38it/s, step=74/100, train/loss=0.4501]Training (step 1/100):  21%|██        | 73/350 [00:14<00:11, 24.38it/s, step=75/100, train/loss=0.4804]Training (step 1/100):  21%|██        | 73/350 [00:14<00:11, 24.38it/s, step=76/100, train/loss=0.4616]Training (step 1/100):  22%|██▏       | 76/350 [00:14<00:11, 24.36it/s, step=76/100, train/loss=0.4616]Training (step 1/100):  22%|██▏       | 76/350 [00:15<00:11, 24.36it/s, step=77/100, train/loss=0.3976]Training (step 1/100):  22%|██▏       | 76/350 [00:15<00:11, 24.36it/s, step=78/100, train/loss=0.2976]Training (step 1/100):  22%|██▏       | 76/350 [00:15<00:11, 24.36it/s, step=79/100, train/loss=0.4926]Training (step 1/100):  23%|██▎       | 79/350 [00:15<00:10, 24.78it/s, step=79/100, train/loss=0.4926]Training (step 1/100):  23%|██▎       | 79/350 [00:15<00:10, 24.78it/s, step=80/100, train/loss=0.2608]Training (step 1/100):  23%|██▎       | 79/350 [00:15<00:10, 24.78it/s, step=81/100, train/loss=0.5844]Training (step 1/100):  23%|██▎       | 79/350 [00:15<00:10, 24.78it/s, step=82/100, train/loss=0.4415]Training (step 1/100):  23%|██▎       | 82/350 [00:15<00:11, 23.87it/s, step=82/100, train/loss=0.4415]Training (step 1/100):  23%|██▎       | 82/350 [00:15<00:11, 23.87it/s, step=83/100, train/loss=0.3423]Training (step 1/100):  23%|██▎       | 82/350 [00:15<00:11, 23.87it/s, step=84/100, train/loss=0.2955]Training (step 1/100):  23%|██▎       | 82/350 [00:15<00:11, 23.87it/s, step=85/100, train/loss=0.2447]Training (step 1/100):  24%|██▍       | 85/350 [00:15<00:11, 23.98it/s, step=85/100, train/loss=0.2447]Training (step 1/100):  24%|██▍       | 85/350 [00:15<00:11, 23.98it/s, step=86/100, train/loss=0.3437]Training (step 1/100):  24%|██▍       | 85/350 [00:15<00:11, 23.98it/s, step=87/100, train/loss=0.3208]Training (step 1/100):  24%|██▍       | 85/350 [00:15<00:11, 23.98it/s, step=88/100, train/loss=0.3048]Training (step 1/100):  25%|██▌       | 88/350 [00:15<00:10, 24.67it/s, step=88/100, train/loss=0.3048]Training (step 1/100):  25%|██▌       | 88/350 [00:15<00:10, 24.67it/s, step=89/100, train/loss=0.3406]Training (step 1/100):  25%|██▌       | 88/350 [00:15<00:10, 24.67it/s, step=90/100, train/loss=0.3684]Training (step 1/100):  25%|██▌       | 88/350 [00:15<00:10, 24.67it/s, step=91/100, train/loss=0.3381]Training (step 1/100):  26%|██▌       | 91/350 [00:15<00:11, 22.86it/s, step=91/100, train/loss=0.3381]Training (step 1/100):  26%|██▌       | 91/350 [00:15<00:11, 22.86it/s, step=92/100, train/loss=0.7262]Training (step 1/100):  26%|██▌       | 91/350 [00:15<00:11, 22.86it/s, step=93/100, train/loss=0.3267]Training (step 1/100):  26%|██▌       | 91/350 [00:15<00:11, 22.86it/s, step=94/100, train/loss=0.3067]Training (step 1/100):  27%|██▋       | 94/350 [00:15<00:10, 23.46it/s, step=94/100, train/loss=0.3067]Training (step 1/100):  27%|██▋       | 94/350 [00:15<00:10, 23.46it/s, step=95/100, train/loss=0.3065]Training (step 1/100):  27%|██▋       | 94/350 [00:15<00:10, 23.46it/s, step=96/100, train/loss=0.3283]Training (step 1/100):  27%|██▋       | 94/350 [00:15<00:10, 23.46it/s, step=97/100, train/loss=0.3263]Training (step 1/100):  28%|██▊       | 97/350 [00:15<00:11, 21.68it/s, step=97/100, train/loss=0.3263]Training (step 1/100):  28%|██▊       | 97/350 [00:15<00:11, 21.68it/s, step=98/100, train/loss=0.3775]Training (step 1/100):  28%|██▊       | 97/350 [00:16<00:11, 21.68it/s, step=99/100, train/loss=0.3909]Training (step 1/100):  28%|██▊       | 97/350 [00:16<00:11, 21.68it/s, step=100/100, train/loss=0.2582]
+Validation:   0%|          | 0/95 [00:00<?, ?it/s][A
+Validation:   0%|          | 0/95 [00:03<?, ?it/s, Loss=0.3735][A
+Validation:   1%|          | 1/95 [00:03<05:40,  3.63s/it, Loss=0.3735][A
+Validation:   1%|          | 1/95 [00:03<05:40,  3.63s/it, Loss=0.3767][A
+Validation:   1%|          | 1/95 [00:03<05:40,  3.63s/it, Loss=0.5378][A
+Validation:   1%|          | 1/95 [00:03<05:40,  3.63s/it, Loss=0.1911][A
+Validation:   4%|▍         | 4/95 [00:03<01:04,  1.40it/s, Loss=0.1911][A
+Validation:   4%|▍         | 4/95 [00:03<01:04,  1.40it/s, Loss=0.2657][A
+Validation:   4%|▍         | 4/95 [00:03<01:04,  1.40it/s, Loss=0.2405][A
+Validation:   4%|▍         | 4/95 [00:03<01:04,  1.40it/s, Loss=0.3393][A
+Validation:   7%|▋         | 7/95 [00:03<00:30,  2.87it/s, Loss=0.3393][A
+Validation:   7%|▋         | 7/95 [00:03<00:30,  2.87it/s, Loss=0.4497][A
+Validation:   7%|▋         | 7/95 [00:03<00:30,  2.87it/s, Loss=0.2302][A
+Validation:   7%|▋         | 7/95 [00:03<00:30,  2.87it/s, Loss=0.4907][A
+Validation:  11%|█         | 10/95 [00:03<00:18,  4.72it/s, Loss=0.4907][A
+Validation:  11%|█         | 10/95 [00:03<00:18,  4.72it/s, Loss=0.5458][A
+Validation:  11%|█         | 10/95 [00:03<00:18,  4.72it/s, Loss=0.2411][A
+Validation:  11%|█         | 10/95 [00:04<00:18,  4.72it/s, Loss=0.4376][A
+Validation:  11%|█         | 10/95 [00:04<00:18,  4.72it/s, Loss=0.3609][A
+Validation:  15%|█▍        | 14/95 [00:04<00:10,  7.80it/s, Loss=0.3609][A
+Validation:  15%|█▍        | 14/95 [00:04<00:10,  7.80it/s, Loss=0.2683][A
+Validation:  15%|█▍        | 14/95 [00:04<00:10,  7.80it/s, Loss=0.5305][A
+Validation:  15%|█▍        | 14/95 [00:04<00:10,  7.80it/s, Loss=0.5021][A
+Validation:  15%|█▍        | 14/95 [00:04<00:10,  7.80it/s, Loss=0.7455][A
+Validation:  15%|█▍        | 14/95 [00:04<00:10,  7.80it/s, Loss=0.4287][A
+Validation:  20%|██        | 19/95 [00:04<00:06, 12.33it/s, Loss=0.4287][A
+Validation:  20%|██        | 19/95 [00:04<00:06, 12.33it/s, Loss=0.4890][A
+Validation:  20%|██        | 19/95 [00:04<00:06, 12.33it/s, Loss=0.3364][A
+Validation:  20%|██        | 19/95 [00:04<00:06, 12.33it/s, Loss=0.3338][A
+Validation:  20%|██        | 19/95 [00:04<00:06, 12.33it/s, Loss=0.2032][A
+Validation:  20%|██        | 19/95 [00:04<00:06, 12.33it/s, Loss=0.4556][A
+Validation:  25%|██▌       | 24/95 [00:04<00:04, 17.08it/s, Loss=0.4556][A
+Validation:  25%|██▌       | 24/95 [00:04<00:04, 17.08it/s, Loss=0.2268][A
+Validation:  25%|██▌       | 24/95 [00:04<00:04, 17.08it/s, Loss=0.5920][A
+Validation:  25%|██▌       | 24/95 [00:04<00:04, 17.08it/s, Loss=0.3137][A
+Validation:  25%|██▌       | 24/95 [00:04<00:04, 17.08it/s, Loss=0.2996][A
+Validation:  25%|██▌       | 24/95 [00:04<00:04, 17.08it/s, Loss=0.2784][A
+Validation:  31%|███       | 29/95 [00:04<00:02, 22.13it/s, Loss=0.2784][A
+Validation:  31%|███       | 29/95 [00:04<00:02, 22.13it/s, Loss=0.2763][A
+Validation:  31%|███       | 29/95 [00:04<00:02, 22.13it/s, Loss=0.2650][A
+Validation:  31%|███       | 29/95 [00:04<00:02, 22.13it/s, Loss=0.4158][A
+Validation:  31%|███       | 29/95 [00:04<00:02, 22.13it/s, Loss=0.4618][A
+Validation:  31%|███       | 29/95 [00:04<00:02, 22.13it/s, Loss=0.2774][A
+Validation:  36%|███▌      | 34/95 [00:04<00:02, 27.13it/s, Loss=0.2774][A
+Validation:  36%|███▌      | 34/95 [00:04<00:02, 27.13it/s, Loss=0.5092][A
+Validation:  36%|███▌      | 34/95 [00:04<00:02, 27.13it/s, Loss=0.3679][A
+Validation:  36%|███▌      | 34/95 [00:04<00:02, 27.13it/s, Loss=0.3415][A
+Validation:  36%|███▌      | 34/95 [00:04<00:02, 27.13it/s, Loss=0.2541][A
+Validation:  36%|███▌      | 34/95 [00:04<00:02, 27.13it/s, Loss=0.5137][A
+Validation:  41%|████      | 39/95 [00:04<00:01, 31.02it/s, Loss=0.5137][A
+Validation:  41%|████      | 39/95 [00:04<00:01, 31.02it/s, Loss=0.5185][A
+Validation:  41%|████      | 39/95 [00:04<00:01, 31.02it/s, Loss=0.2649][A
+Validation:  41%|████      | 39/95 [00:04<00:01, 31.02it/s, Loss=0.2902][A
+Validation:  41%|████      | 39/95 [00:04<00:01, 31.02it/s, Loss=0.2815][A
+Validation:  41%|████      | 39/95 [00:04<00:01, 31.02it/s, Loss=0.2509][A
+Validation:  46%|████▋     | 44/95 [00:04<00:01, 31.04it/s, Loss=0.2509][A
+Validation:  46%|████▋     | 44/95 [00:04<00:01, 31.04it/s, Loss=0.5860][A
+Validation:  46%|████▋     | 44/95 [00:04<00:01, 31.04it/s, Loss=0.3019][A
+Validation:  46%|████▋     | 44/95 [00:04<00:01, 31.04it/s, Loss=0.2019][A
+Validation:  46%|████▋     | 44/95 [00:04<00:01, 31.04it/s, Loss=0.3436][A
+Validation:  46%|████▋     | 44/95 [00:04<00:01, 31.04it/s, Loss=0.2108][A
+Validation:  52%|█████▏    | 49/95 [00:04<00:01, 32.74it/s, Loss=0.2108][A
+Validation:  52%|█████▏    | 49/95 [00:04<00:01, 32.74it/s, Loss=0.5409][A
+Validation:  52%|█████▏    | 49/95 [00:04<00:01, 32.74it/s, Loss=0.3219][A
+Validation:  52%|█████▏    | 49/95 [00:04<00:01, 32.74it/s, Loss=0.1786][A
+Validation:  52%|█████▏    | 49/95 [00:05<00:01, 32.74it/s, Loss=0.3789][A
+Validation:  56%|█████▌    | 53/95 [00:05<00:01, 32.53it/s, Loss=0.3789][A
+Validation:  56%|█████▌    | 53/95 [00:05<00:01, 32.53it/s, Loss=0.4161][A
+Validation:  56%|█████▌    | 53/95 [00:05<00:01, 32.53it/s, Loss=0.4161][A
+Validation:  56%|█████▌    | 53/95 [00:05<00:01, 32.53it/s, Loss=0.4285][A
+Validation:  56%|█████▌    | 53/95 [00:05<00:01, 32.53it/s, Loss=0.2766][A
+Validation:  56%|█████▌    | 53/95 [00:05<00:01, 32.53it/s, Loss=0.4201][A
+Validation:  61%|██████    | 58/95 [00:05<00:01, 34.56it/s, Loss=0.4201][A
+Validation:  61%|██████    | 58/95 [00:05<00:01, 34.56it/s, Loss=0.3081][A
+Validation:  61%|██████    | 58/95 [00:05<00:01, 34.56it/s, Loss=0.2895][A
+Validation:  61%|██████    | 58/95 [00:05<00:01, 34.56it/s, Loss=0.4049][A
+Validation:  61%|██████    | 58/95 [00:05<00:01, 34.56it/s, Loss=0.1756][A
+Validation:  61%|██████    | 58/95 [00:05<00:01, 34.56it/s, Loss=0.2574][A
+Validation:  66%|██████▋   | 63/95 [00:05<00:00, 37.37it/s, Loss=0.2574][A
+Validation:  66%|██████▋   | 63/95 [00:05<00:00, 37.37it/s, Loss=0.3897][A
+Validation:  66%|██████▋   | 63/95 [00:05<00:00, 37.37it/s, Loss=0.2794][A
+Validation:  66%|██████▋   | 63/95 [00:05<00:00, 37.37it/s, Loss=0.3580][A
+Validation:  66%|██████▋   | 63/95 [00:05<00:00, 37.37it/s, Loss=0.3410][A
+Validation:  66%|██████▋   | 63/95 [00:05<00:00, 37.37it/s, Loss=0.3223][A
+Validation:  72%|███████▏  | 68/95 [00:05<00:00, 36.45it/s, Loss=0.3223][A
+Validation:  72%|███████▏  | 68/95 [00:05<00:00, 36.45it/s, Loss=0.5450][A
+Validation:  72%|███████▏  | 68/95 [00:05<00:00, 36.45it/s, Loss=0.4903][A
+Validation:  72%|███████▏  | 68/95 [00:05<00:00, 36.45it/s, Loss=0.3362][A
+Validation:  72%|███████▏  | 68/95 [00:05<00:00, 36.45it/s, Loss=0.4220][A
+Validation:  76%|███████▌  | 72/95 [00:05<00:00, 34.15it/s, Loss=0.4220][A
+Validation:  76%|███████▌  | 72/95 [00:05<00:00, 34.15it/s, Loss=0.2571][A
+Validation:  76%|███████▌  | 72/95 [00:05<00:00, 34.15it/s, Loss=0.3174][A
+Validation:  76%|███████▌  | 72/95 [00:05<00:00, 34.15it/s, Loss=0.4644][A
+Validation:  76%|███████▌  | 72/95 [00:05<00:00, 34.15it/s, Loss=0.4729][A
+Validation:  80%|████████  | 76/95 [00:05<00:00, 33.63it/s, Loss=0.4729][A
+Validation:  80%|████████  | 76/95 [00:05<00:00, 33.63it/s, Loss=0.7667][A
+Validation:  80%|████████  | 76/95 [00:05<00:00, 33.63it/s, Loss=0.2803][A
+Validation:  80%|████████  | 76/95 [00:05<00:00, 33.63it/s, Loss=0.4428][A
+Validation:  80%|████████  | 76/95 [00:05<00:00, 33.63it/s, Loss=0.4273][A
+Validation:  84%|████████▍ | 80/95 [00:05<00:00, 32.89it/s, Loss=0.4273][A
+Validation:  84%|████████▍ | 80/95 [00:05<00:00, 32.89it/s, Loss=0.4304][A
+Validation:  84%|████████▍ | 80/95 [00:05<00:00, 32.89it/s, Loss=0.2591][A
+Validation:  84%|████████▍ | 80/95 [00:05<00:00, 32.89it/s, Loss=0.3883][A
+Validation:  84%|████████▍ | 80/95 [00:05<00:00, 32.89it/s, Loss=0.3091][A
+Validation:  88%|████████▊ | 84/95 [00:05<00:00, 30.60it/s, Loss=0.3091][A
+Validation:  88%|████████▊ | 84/95 [00:05<00:00, 30.60it/s, Loss=0.3309][A
+Validation:  88%|████████▊ | 84/95 [00:06<00:00, 30.60it/s, Loss=0.3604][A
+Validation:  88%|████████▊ | 84/95 [00:06<00:00, 30.60it/s, Loss=0.3568][A
+Validation:  88%|████████▊ | 84/95 [00:06<00:00, 30.60it/s, Loss=0.3083][A
+Validation:  93%|█████████▎| 88/95 [00:06<00:00, 29.34it/s, Loss=0.3083][A
+Validation:  93%|█████████▎| 88/95 [00:06<00:00, 29.34it/s, Loss=0.2483][A
+Validation:  93%|█████████▎| 88/95 [00:06<00:00, 29.34it/s, Loss=0.4445][A
+Validation:  93%|█████████▎| 88/95 [00:06<00:00, 29.34it/s, Loss=0.2455][A
+Validation:  93%|█████████▎| 88/95 [00:06<00:00, 29.34it/s, Loss=0.3738][A
+Validation:  93%|█████████▎| 88/95 [00:06<00:00, 29.34it/s, Loss=0.4305][A
+Validation:  98%|█████████▊| 93/95 [00:06<00:00, 33.60it/s, Loss=0.4305][A
+Validation:  98%|█████████▊| 93/95 [00:06<00:00, 33.60it/s, Loss=0.4729][A
+Validation:  98%|█████████▊| 93/95 [00:06<00:00, 33.60it/s, Loss=0.5679][AValidation: 100%|██████████| 95/95 [00:06<00:00, 15.03it/s, Loss=0.5679]
+Training (step 1/100):  29%|██▊       | 100/350 [00:23<03:11,  1.30it/s, step=100/100, train/loss=0.2582]Training (step 1/100):  29%|██▊       | 100/350 [00:23<00:58,  4.29it/s, step=100/100, train/loss=0.2582]
+New best validation loss: 0.3713, saved checkpoint
+Validation avg/val/loss: 0.3713
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg       CPU Mem  Self CPU Mem      CUDA Mem  Self CUDA Mem    # of Calls  Total GFLOPs  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                            aten::empty         0.57%     155.762ms         0.60%     163.401ms       5.611us       0.000us         0.00%       0.000us       0.000us     218.27 Mb     218.27 Mb      38.30 Gb      38.30 Gb         29122            --  
+                                              aten::bmm         0.39%     105.765ms         0.66%     181.790ms      65.652us     181.912ms         7.39%     181.912ms      65.696us           0 b           0 b      34.63 Gb      34.63 Gb          2769      3514.618  
+                                    aten::empty_strided         0.43%     116.743ms         0.43%     118.587ms       5.319us       0.000us         0.00%       0.000us       0.000us      58.62 Mb      58.62 Mb      28.19 Gb      28.19 Gb         22293            --  
+                                              aten::cat         0.19%      51.617ms         0.30%      82.367ms      26.290us      31.265ms         1.27%      31.265ms       9.979us           0 b           0 b      24.04 Gb      24.04 Gb          3133            --  
+                                              aten::mul         0.34%      92.722ms         0.55%     149.666ms      17.790us      27.794ms         1.13%      27.794ms       3.304us         608 b         608 b      21.82 Gb      21.82 Gb          8413         5.715  
+                                            aten::index         0.19%      53.290ms         0.74%     203.733ms      73.630us      27.872ms         1.13%      32.349ms      11.691us           0 b           0 b      17.39 Gb      17.37 Gb          2767            --  
+                                               aten::mm         0.57%     156.269ms         0.78%     213.296ms      56.353us      47.586ms         1.93%      47.586ms      12.572us           0 b           0 b      13.93 Gb      13.93 Gb          3785       970.624  
+                                            aten::addmm         0.36%      98.826ms         0.49%     133.371ms      48.854us      28.887ms         1.17%      28.887ms      10.581us           0 b           0 b      13.73 Gb      13.73 Gb          2730       815.111  
+                                             aten::gelu         0.04%       9.794ms         0.07%      20.162ms      25.849us       4.418ms         0.18%       4.418ms       5.664us           0 b           0 b       8.34 Gb       8.34 Gb           780            --  
+                                          aten::resize_         0.09%      23.330ms         0.10%      27.811ms       3.273us     813.397us         0.03%     813.397us       0.096us      28.46 Kb      28.46 Kb       4.89 Gb       4.89 Gb          8496            --  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+Self CPU time total: 27.394s
+Self CUDA time total: 2.462s
+

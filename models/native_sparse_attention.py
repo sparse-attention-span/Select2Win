@@ -176,6 +176,7 @@ class SparseAttention(Module):
         num_compressed_mem_kv = 1,
         norm = True,
         use_diff_topk = False,
+        use_triton_kernel = False,
         query_heads_share_selected_kv = True, # if set to True, importance score is averaged across query heads to select top-n buckets of kv per kv head - but can be set to False for each query head within a group to look at different sets of kv buckets. will be more memory and compute of course
         compress_mlp: Module | None = None,
         compress_mlp_expand_factor = 1.,
@@ -217,7 +218,6 @@ class SparseAttention(Module):
 
         # sliding window strategy
 
-        # TODO: double check if LocalAttention has causal=False as default
         self.sliding_window = LocalAttention(
             dim = dim_head,
             window_size = sliding_window_size,
@@ -278,6 +278,8 @@ class SparseAttention(Module):
 
         self.num_selected_blocks = num_selected_blocks
 
+        self.use_triton_kernel = use_triton_kernel
+
         # they combine the three sparse branches through a learned combine with sigmoid activation
 
         if not exists(strategy_combine_mlp):
@@ -306,9 +308,11 @@ class SparseAttention(Module):
     def forward(
         self,
         inp,
+        disable_triton_kernel = False,
         sliding_window_flex_mask = None,
-        fine_selection_flex_mask = None
+        fine_selection_flex_mask = None,
     ):
+
         batch, seq_len, scale, heads, kv_heads, device = *inp.shape[:2], self.scale, self.heads, self.kv_heads, inp.device
 
         compress_divisible_seq_len = round_down_mult(seq_len, self.compress_block_sliding_stride)
@@ -347,6 +351,7 @@ class SparseAttention(Module):
             v_compress_input = einx.add('b h w n d, h n d', v_compress_input, self.v_intrablock_positions)
 
         run_k, run_v = k, v
+
         run_k = run_k[..., compress_divisible_seq_len:, :]
         run_v = run_v[..., compress_divisible_seq_len:, :]
 
@@ -372,6 +377,8 @@ class SparseAttention(Module):
         # for 2. and 3., will give them relative positions with rotary - compressed needs to be handled separately (even if they already have intra block absolute positions)
 
         q, k = self.rotary_emb.rotate_queries_with_cached_keys(q, k)
+
+        # handle cache
 
         # 2. fine attention over selected based on compressed attention logits - variables prepended with `f` stands for the fine attention pathway
 
@@ -440,7 +447,22 @@ class SparseAttention(Module):
 
             gates = straight_through(selected_importance_values, 1.) if self.use_diff_topk else None
 
-            if exists(fine_selection_flex_mask):
+            if self.use_triton_kernel and not disable_triton_kernel:
+
+                from native_sparse_attention_pytorch.triton_native_sparse_attention import native_sparse_attend
+
+                fmask = selected_importance_values > 1e-10
+
+                fine_attn_out = native_sparse_attend(
+                    fq, fk, fv,
+                    self.selection_block_size,
+                    selected_block_indices,
+                    fmask,
+                    sel_scale = gates,
+                    include_block_causal = False
+                )
+
+            elif exists(fine_selection_flex_mask):
                 assert not self.use_diff_topk, 'differential topk is not available for flex attention'
 
                 # flex attention for the selection for fine attention
@@ -462,9 +484,7 @@ class SparseAttention(Module):
                     if exists(gates):
                         gates = pad_at_dim(gates, (0, remainder), value = 0, dim = -2)
 
-
-                else:
-                    fmask = repeat(fmask, 'b h i w -> b h 1 i (w j)', j = self.selection_block_size)
+                fmask = repeat(fmask, 'b h i w -> b h 1 i (w j)', j = self.selection_block_size)
 
                 # select out the spatial crops of keys / values for fine attention
 
@@ -488,6 +508,7 @@ class SparseAttention(Module):
                 # differential topk gating
 
                 if self.use_diff_topk:
+
                     fk = einx.multiply('b h i sel, b h i sel j d -> b h i sel j d', gates, fk)
 
                 # merge selected key values
@@ -513,7 +534,6 @@ class SparseAttention(Module):
                 fine_attn_out = fine_attn_out[..., :seq_len, :]
 
         else:
-            # if only first block, just do a simple block causal
 
             seq_len = fk.shape[-2]
             fmask = None
@@ -549,6 +569,7 @@ class SparseAttention(Module):
         # merge heads and combine them
 
         out = self.merge_heads(out)
+
         out = self.combine_heads(out)
 
         return out

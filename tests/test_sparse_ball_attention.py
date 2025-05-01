@@ -7,7 +7,7 @@ from einops import rearrange
 
 sys.path.append("./")
 from models import ErwinTransformer
-from models.erwin import NSAMSA, BallMSA
+from models.erwin import NSAMSA, BallMSA, LucidRains
 
 from benchmark.bench_visual_field import compute_specific_grads
 
@@ -62,6 +62,7 @@ def generate_point_cloud(n_groups=5, samples_per_group=4, std_dev=0.1, seed=None
 if __name__ == "__main__":
     from balltree import build_balltree
     import matplotlib.pyplot as plt
+    # device = "cuda" if torch.cuda.is_available() else "cpu"
 
     EPS = 1e-20
     feature_dim = 2
@@ -90,29 +91,38 @@ if __name__ == "__main__":
         sharey=True,
     )
 
+
     for theta, ax in zip(thetas, axes):
         print(f"Computing theta={theta}")
-        model = NSAMSA(
-            dim=feature_dim,
-            num_heads=num_heads,
-            ball_size=ball_size,
-            dimensionality=pos_dim,
-            topk=topk,
-            use_diff_topk=use_diff_topk,
-        )
+        # model = NSAMSA(
+        #     dim=feature_dim,
+        #     num_heads=num_heads,
+        #     ball_size=ball_size,
+        #     dimensionality=pos_dim,
+        #     topk=topk,
+        #     use_diff_topk=use_diff_topk,
+        # )
         model = BallMSA(
             dim=feature_dim,
             num_heads=num_heads,
             ball_size=ball_size,
             dimensionality=pos_dim,
         )
+        # model = LucidRains(
+        #     dim=feature_dim,
+        #     num_heads=num_heads,
+        #     ball_size=ball_size,
+        #     dimensionality=pos_dim,
+        #     per_ball=False,
+        #     use_flex_attn=False
+        # ).to(device)
 
         tree_idx, tree_mask = build_balltree(node_positions, batch_idx)
         node_positions = node_positions[tree_idx]
         node_features = node_features[tree_idx]
         node_features.requires_grad_(True)
 
-        def model_wrapper(x):
+        def model_wrapper(x: torch.Tensor):
             out = model(x, node_positions)
             return out
 
