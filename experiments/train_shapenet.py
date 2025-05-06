@@ -27,9 +27,8 @@ def parse_args():
         choices=("mpnn", "pointtransformer", "pointnetpp", "erwin"),
     )
     parser.add_argument("--data-path", type=str, default="../shapenet_car/preprocessed")
-    parser.add_argument(
-        "--size", type=str, default="small", choices=("small", "medium", "large")
-    )
+    parser.add_argument("--size", type=str, default="small", 
+                        choices=('small', 'medium', 'large'))
     parser.add_argument("--num-epochs", type=int, default=100000)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--use-wandb", type=int, default=1)
