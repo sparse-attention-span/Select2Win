@@ -8,6 +8,7 @@ from torch.profiler import (
     record_function,
     ProfilerActivity,
     tensorboard_trace_handler,
+    ExecutionTraceObserver
 )
 from contextlib import ExitStack
 import pandas as pd
@@ -162,6 +163,7 @@ def fit(
                         with_flops=True,
                         record_shapes=True,
                         on_trace_ready=tensorboard_trace_handler("log_dir"),
+                        with_modules=True,
                     )
                 )
                 stack.enter_context(record_function("model_inference"))
