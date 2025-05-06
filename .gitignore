@@ -5,6 +5,7 @@ datasets/
 experiments/checkpoints/
 experiments/wandb/
 shapenet_car/
+experiments/log_dir
 
 # ignore visualization script output
 *.pdf
