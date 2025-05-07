@@ -308,7 +308,7 @@ class LucidRains(nn.Module):
             COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//2
 
             FINE_BLOCK_SIZE = ball_size
-            NUM_FINE_SELECTED = 2
+            NUM_FINE_SELECTED = 1
         else:
             SLIDING_WINDOW_SIZE = ball_size//8
             COMPRESS_BLOCK_SIZE = ball_size//8
@@ -317,7 +317,8 @@ class LucidRains(nn.Module):
             FINE_BLOCK_SIZE = ball_size//8
             NUM_FINE_SELECTED = 1
 
-        kv_heads = num_heads//4 if use_gqa else num_heads
+        # should redouce memory usage
+        kv_heads = num_heads//8 if use_gqa else num_heads
 
         dim_head = dim//num_heads*2
 
@@ -341,7 +342,7 @@ class LucidRains(nn.Module):
             num_selected_blocks = NUM_FINE_SELECTED,
             use_diff_topk = False,
             use_triton_kernel=self.use_triton_impl,
-            query_heads_share_selected_kv = True,
+            query_heads_share_selected_kv = True
         )
 
         self.sliding_window_size = SLIDING_WINDOW_SIZE
@@ -357,37 +358,38 @@ class LucidRains(nn.Module):
         return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
-        x = x + self.pe_proj(self.compute_rel_pos(pos))
-        if self.per_ball:
-            x = rearrange(x, "(n m) E -> n m E", m=self.ball_size) # Batch balls instead of computing global attn
-        else:
-            x = x.unsqueeze(0)
-        if not self.B:
-            self.B = x.shape[1]
-            printd("seq_len is", self.B)
-        elif x.shape[1] != self.B:
-            printd(f"points changed ({self.B} -> {x.shape[1]})")
-        disable_triton = not self.use_triton_impl
+        with torch.cuda.amp.autocast():
+            x = x + self.pe_proj(self.compute_rel_pos(pos))
+            if self.per_ball:
+                x = rearrange(x, "(n m) E -> n m E", m=self.ball_size)
+            else:
+                x = x.unsqueeze(0)
+            if not self.B:
+                self.B = x.shape[1]
+                printd("seq_len is", self.B)
+            elif x.shape[1] != self.B:
+                printd(f"points changed ({self.B} -> {x.shape[1]})")
+            disable_triton = not self.use_triton_impl
 
-        seq_len = x.shape[1]
+            seq_len = x.shape[1]
 
-        if self.use_flex_attn and x.shape[1] == self.B:
-            sliding_window_flex_mask = create_sliding_mask(seq_len, self.sliding_window_size)
-            fine_selection_flex_mask = create_fine_mask(seq_len, self.selection_block_size)
-            x = self.sparse_attn(
-                x,
-                sliding_window_flex_mask=sliding_window_flex_mask,
-                fine_selection_flex_mask=fine_selection_flex_mask
-            )
-        else:
-            x = self.sparse_attn(x, disable_triton_kernel=disable_triton)
+            if self.use_flex_attn and x.shape[1] == self.B:
+                sliding_window_flex_mask = create_sliding_mask(seq_len, self.sliding_window_size)
+                fine_selection_flex_mask = create_fine_mask(seq_len, self.selection_block_size)
+                x = self.sparse_attn(
+                    x,
+                    sliding_window_flex_mask=sliding_window_flex_mask,
+                    fine_selection_flex_mask=fine_selection_flex_mask
+                )
+            else:
+                x = self.sparse_attn(x, disable_triton_kernel=disable_triton)
 
-        if self.per_ball:
-            x = rearrange(x, "n m E -> (n m) E", m=self.ball_size)
-        else:
-            x = x.squeeze(0)
+            if self.per_ball:
+                x = rearrange(x, "n m E -> (n m) E", m=self.ball_size)
+            else:
+                x = x.squeeze(0)
 
-        return x
+            return x
 
 class NSAMSA(nn.Module):
     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
