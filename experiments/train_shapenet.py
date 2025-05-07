@@ -51,6 +51,15 @@ def parse_args():
         action="store_true",
         help="Use minimal profile configuration for testing",
     )
+    parser.add_argument("--msa-type", type=str, default="BallMSA",
+                        choices=["BallMSA", "NSAMSA", "LucidRains"])
+
+    parser.add_argument("--lucidrains-per-ball", type=bool)
+    parser.add_argument("--lucidrains-gqa", type=bool)
+    parser.add_argument("--lucidrains-triton-kernel", type=bool)
+    parser.add_argument("--lucidrains-flex-attn", type=bool)
+
+    parser.add_argument("--nsamsa-use-diff-topk", type=bool)
 
     return parser.parse_args()
 
@@ -78,24 +87,6 @@ erwin_configs = {
         "ball_sizes": [256,],
         "enc_num_heads": [8,],
         "enc_depths": [1,],
-        "dec_num_heads": [],
-        "dec_depths": [],
-        "strides": [],
-        "rotate": 0,
-        "mp_steps": 3,
-    },
-    "profile": {
-        "c_in": 64,
-        "c_hidden": 64,
-        "ball_sizes": [
-            256,
-        ],
-        "enc_num_heads": [
-            8,
-        ],
-        "enc_depths": [
-            1,
-        ],
         "dec_num_heads": [],
         "dec_depths": [],
         "strides": [],
@@ -195,14 +186,10 @@ if __name__ == "__main__":
 
     if args.model == "erwin":
         model_config = erwin_configs[args.size]
-        if args.profile:
-            model_config = erwin_configs["profile"]
     else:
         raise NotImplementedError(f"Unknown model: {args.model}")
 
     main_model = model_cls[args.model](**model_config, **get_attn_kwargs(args))
-
-    main_model = model_cls[args.model](**model_config)
     model = ShapenetCarModel(main_model).cuda()
     model = torch.compile(model)
 
