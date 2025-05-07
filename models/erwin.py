@@ -21,7 +21,7 @@ from balltree import build_balltree_with_rotations
 # Defaults
 MSATYPE = "LucidRains"
 USE_FLEX_ATTN = False
-USE_TRITON_IMPL = True
+USE_TRITON_IMPL = False
 USE_GQA = True
 PER_BALL = False
 
