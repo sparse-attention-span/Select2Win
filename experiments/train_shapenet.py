@@ -37,12 +37,6 @@ def parse_args():
                         help="Validation frequency")
     parser.add_argument("--experiment", type=str, default="shapenet",
                         help="Experiment name in wandb")
-    parser.add_argument(
-        "--val-every-iter", type=int, default=100, help="Validation frequency"
-    )
-    parser.add_argument(
-        "--experiment", type=str, default="shapenet", help="Experiment name in wandb"
-    )
     parser.add_argument("--test", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--knn", type=int, default=8)
