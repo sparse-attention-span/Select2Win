@@ -5,6 +5,7 @@ datasets/
 experiments/checkpoints/
 experiments/wandb/
 shapenet_car/
+experiments/log_dir
 
 # will be way too big
 experiments/log_dir
