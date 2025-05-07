@@ -86,6 +86,7 @@ erwin_configs = {
         "strides": [],
         "rotate": 0,
         "mp_steps": 3,
+        "msa_type": ""
     },
     "small": {
         "c_in": 64,
@@ -98,6 +99,7 @@ erwin_configs = {
         "strides": [1],
         "rotate": 45,
         "mp_steps": 3,
+        "msa_type": ""
     },
     "medium": {
         "c_in": 64,
@@ -110,6 +112,7 @@ erwin_configs = {
         "strides": [1],
         "rotate": 45,
         "mp_steps": 3,
+        "msa_type": ""
     },
     "large": {
         "c_in": 64,
@@ -122,6 +125,7 @@ erwin_configs = {
         "strides": [1],
         "rotate": 45,
         "mp_steps": 3,
+        "msa_type": ""
     },
 }
 
@@ -182,6 +186,8 @@ if __name__ == "__main__":
         model_config = erwin_configs[args.size]
     else:
         raise NotImplementedError(f"Unknown model: {args.model}")
+
+    model_config["msa_type"] = args.msa_type
 
     main_model = model_cls[args.model](**model_config, **get_attn_kwargs(args))
     model = ShapenetCarModel(main_model).cuda()
