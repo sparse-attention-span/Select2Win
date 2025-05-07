@@ -178,21 +178,21 @@ def fit(
                 model.train()
                 batch = {k: v.cuda() for k, v in batch.items()}
 
-                # measure runtime statistics
-                if global_step == timing_window_start:
-                    timing_start = time.perf_counter()
+                # # measure runtime statistics
+                # if global_step == timing_window_start:
+                #     timing_start = time.perf_counter()
 
-                if global_step == timing_window_start + timing_window_size:
-                    timing_end = time.perf_counter()
-                    total_time = timing_end - timing_start
-                    steps_per_second = timing_window_size / total_time
-                    if config.get("use_wandb", False):
-                        wandb.log(
-                            {"stats/steps_per_second": steps_per_second},
-                            step=global_step,
-                        )
-                    else:
-                        print(f"Steps per second: {steps_per_second:.2f}")
+                # if global_step == timing_window_start + timing_window_size:
+                #     timing_end = time.perf_counter()
+                #     total_time = timing_end - timing_start
+                #     steps_per_second = timing_window_size / total_time
+                #     if config.get("use_wandb", False):
+                #         wandb.log(
+                #             {"stats/steps_per_second": steps_per_second},
+                #             step=global_step,
+                #         )
+                #     else:
+                #         print(f"Steps per second: {steps_per_second:.2f}")
 
                 stat_dict = train_step(model, batch, optimizer, scheduler)
 
@@ -278,6 +278,7 @@ def fit(
             # df = df[keep]
             # df = convert_units(df)
             # print(df)
+            print("Calculating runtime stats.....")
             print(
                 prof.key_averages().table(
                     sort_by="self_cuda_memory_usage", row_limit=10

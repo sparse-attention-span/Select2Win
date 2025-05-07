@@ -6,4 +6,5 @@ uv run train_shapenet.py \
     --data-path "$HOME/erwin/shapenet_car/preprocessed" \
     --use-wandb 0 \
     --msa-type LucidRains \
-    --lucidrains-triton-kernel false
+    --lucidrains-triton-kernel \
+    --lucidrains-gqa

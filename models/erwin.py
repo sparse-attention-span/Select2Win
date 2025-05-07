@@ -18,20 +18,6 @@ from native_sparse_attention_pytorch.compress_networks import GroupedMLP # lib
 
 from balltree import build_balltree_with_rotations
 
-# Defaults
-MSATYPE = "LucidRains"
-USE_FLEX_ATTN = False
-USE_TRITON_IMPL = False
-USE_GQA = True
-PER_BALL = False
-
-LUCIDRAINS_DEFAULTS = {
-    "USE_FLEX_ATTN": USE_FLEX_ATTN,
-    "USE_TRITON_IMPL": USE_TRITON_IMPL,
-    "USE_GQA": USE_GQA,
-    "PER_BALL": PER_BALL,
-}
-
 # Enable debug prints
 DBGPRINTS = False
 
@@ -286,11 +272,11 @@ class LucidRains(nn.Module):
         dim: int,
         num_heads: int,
         ball_size: int,
-        dimensionality: int = 3,
-        per_ball: bool = PER_BALL,
-        use_flex_attn: bool = USE_FLEX_ATTN,
-        use_triton_impl: bool = USE_TRITON_IMPL,
-        use_gqa: bool = USE_GQA,
+        per_ball: bool,
+        use_flex_attn: bool,
+        use_triton_impl: bool,
+        use_gqa: bool,
+        dimensionality: int,
     ):
         super().__init__()
         self.dim = dim
@@ -517,8 +503,8 @@ class ErwinTransformerBlock(nn.Module):
         num_heads: int,
         ball_size: int,
         mlp_ratio: int,
+        msa_type: str,
         dimensionality: int = 3,
-        msa_type: str = MSATYPE,
         attn_kwargs: dict = {},
     ):
         super().__init__()
@@ -533,7 +519,7 @@ class ErwinTransformerBlock(nn.Module):
         }[msa_type]
 
         self.BMSA = MSABase(
-            dim, num_heads, ball_size, dimensionality, **attn_kwargs
+            dim, num_heads, ball_size, dimensionality=dimensionality, **attn_kwargs
         )
         self.swiglu = SwiGLU(dim, dim * mlp_ratio)
 
@@ -555,8 +541,8 @@ class BasicLayer(nn.Module):
         ball_size: int,
         mlp_ratio: int,
         rotate: bool,
+        msa_type: str,
         dimensionality: int = 3,
-        msa_type: str = MSATYPE,
         attn_kwargs: dict = {},
     ):
         super().__init__()
@@ -568,8 +554,8 @@ class BasicLayer(nn.Module):
                     num_heads,
                     ball_size,
                     mlp_ratio,
-                    dimensionality,
                     msa_type,
+                    dimensionality,
                     attn_kwargs,
                 )
                 for _ in range(depth)
@@ -645,11 +631,11 @@ class ErwinTransformer(nn.Module):
         dec_depths: List,
         strides: List,
         rotate: int,
+        msa_type: str,
         decode: bool = True,
         mlp_ratio: int = 4,
         dimensionality: int = 3,
         mp_steps: int = 3,
-        msa_type: str = MSATYPE,
         attn_kwargs: dict = {},
     ):
         super().__init__()
@@ -675,8 +661,7 @@ class ErwinTransformer(nn.Module):
         print(f"using {msa_type}")
 
         if msa_type == "LucidRains":
-            for kw, v in LUCIDRAINS_DEFAULTS.items():
-                print(f"{kw}:", attn_kwargs[kw] if kw in attn_kwargs.keys() else v)
+            print(attn_kwargs)
 
 
         self.encoder = nn.ModuleList()

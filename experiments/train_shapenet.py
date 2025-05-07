@@ -48,12 +48,12 @@ def parse_args():
     parser.add_argument("--msa-type", type=str, default="BallMSA",
                         choices=["BallMSA", "NSAMSA", "LucidRains"])
 
-    parser.add_argument("--lucidrains-per-ball", type=bool)
-    parser.add_argument("--lucidrains-gqa", type=bool)
-    parser.add_argument("--lucidrains-triton-kernel", type=bool)
-    parser.add_argument("--lucidrains-flex-attn", type=bool)
+    parser.add_argument("--lucidrains-per-ball", action='store_true')
+    parser.add_argument("--lucidrains-gqa", action='store_true')
+    parser.add_argument("--lucidrains-triton-kernel", action='store_true')
+    parser.add_argument("--lucidrains-flex-attn", action='store_true')
 
-    parser.add_argument("--nsamsa-use-diff-topk", type=bool)
+    parser.add_argument("--nsamsa-use-diff-topk", action='store_true')
 
     return parser.parse_args()
 
@@ -65,14 +65,14 @@ def get_attn_kwargs(args):
             "use_triton_impl": args.lucidrains_triton_kernel,
             "use_gqa": args.lucidrains_gqa,
         }
-    if args.msa_type == "NSAMSA":
+    elif args.msa_type == "NSAMSA":
         kwargs = {
             "use_diff_topk": args.nsamsa_use_diff_topk
         }
     else:
         kwargs = {}
 
-    return {k: v for k, v in kwargs.items() if v is not None}
+    return kwargs
 
 erwin_configs = {
     "profile": {
@@ -189,7 +189,7 @@ if __name__ == "__main__":
 
     model_config["msa_type"] = args.msa_type
 
-    main_model = model_cls[args.model](**model_config, **get_attn_kwargs(args))
+    main_model = model_cls[args.model](**model_config, attn_kwargs=get_attn_kwargs(args))
     model = ShapenetCarModel(main_model).cuda()
     model = torch.compile(model)
 
