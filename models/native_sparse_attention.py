@@ -326,7 +326,7 @@ class SparseAttention(Module):
 
         # maybe prenorm
 
-        inp = self.norm(inp)
+        # inp = self.norm(inp)
 
         # queries, keys, values
 
@@ -376,7 +376,7 @@ class SparseAttention(Module):
 
         # for 2. and 3., will give them relative positions with rotary - compressed needs to be handled separately (even if they already have intra block absolute positions)
 
-        q, k = self.rotary_emb.rotate_queries_with_cached_keys(q, k)
+        # q, k = self.rotary_emb.rotate_queries_with_cached_keys(q, k)
 
         # handle cache
 

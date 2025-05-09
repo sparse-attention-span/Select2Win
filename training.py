@@ -114,6 +114,8 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
 
     print(f"use tqdm: {use_tqdm}")
     print(f"max epochs: {max_steps}")
+    print(f"testing: {config.get('test', False)}")
+    print(f"test loader: {test_loader}")
     
     torch.autograd.set_detect_anomaly(True)
     while global_step < max_steps:
@@ -192,22 +194,6 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
                 print(global_step)
                 
         if config.get("profile"):
-            # events = prof.key_averages()
-            # df = pd.DataFrame(map(vars, events))
-            # df = df.sort_values(by='device_memory_usage', ascending=False)
-            
-            # print("Available columns:", list(df.columns))
-            # keep = [
-            #     "key",
-            #     "cpu_time_total",
-            #     "device_time_total",
-            #     "cpu_memory_usage",
-            #     "device_memory_usage"
-            #     #"flops" doesn't work. need to use fvcore.
-            # ]
-            # df = df[keep]
-            # df = convert_units(df)
-            # print(df)
             print(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=10))
 
     if test_loader is not None and config.get('test', False):
@@ -225,6 +211,7 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
             loss_keys = [k for k in test_stats.keys() if "loss" in k]
             for k in loss_keys:
                 print(f"Test {k}: {test_stats[k]:.4f}")
+    print("out of fit loop")
     return model
 
 def convert_units(df):

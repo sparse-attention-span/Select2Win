@@ -3,7 +3,7 @@
 #SBATCH --gpus=1
 #SBATCH --job-name=lucidLowLR
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=18
+#SBATCH --cpus-per-task=16
 #SBATCH --time=00:45:00
 #SBATCH --output=slurm/mem_test.%A.%N.out
 
