@@ -1,0 +1,1 @@
+uv run train_shapenet.py --profile --lr 0.00001 --num-epochs 400 --data-path "../shapenet_car/preprocessed" --use-wandb 1 --msa-type LucidRains
