@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=gpu_a100
 #SBATCH --gpus=1
-#SBATCH --job-name=lucidLowLR
+#SBATCH --job-name=erwinOGSN
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
 #SBATCH --time=00:45:00
@@ -11,4 +11,4 @@ source erwin/bin/activate
 
 cd experiments
 
-uv run train_shapenet.py --profile --lr 0.00001 --num-epochs 300 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --use-wandb 1 --msa-type LucidRains
+uv run train_shapenet.py --profile --lr 0.001 --num-epochs 300 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --use-wandb 1 --msa-type BallMSA

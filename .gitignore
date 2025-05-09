@@ -6,6 +6,7 @@ experiments/checkpoints/
 experiments/wandb/
 shapenet_car/
 
+slurm
 # will be way too big
 experiments/log_dir
 

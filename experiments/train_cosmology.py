@@ -39,6 +39,8 @@ def parse_args():
     parser.add_argument("--test", action="store_true", default=True,
                         help="Whether to run testing")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--msa-type", type=str, default="BallMSA",
+                        choices=["BallMSA", "NSAMSA", "LucidRains"])
     
     return parser.parse_args()
 
@@ -79,6 +81,24 @@ erwin_configs = {
 model_cls = {
     "erwin": ErwinTransformer,
 }
+
+def get_attn_kwargs(args):
+    if args.msa_type == "LucidRains":
+        kwargs =  {
+            "per_ball": args.lucidrains_per_ball,
+            "use_flex_attn": args.lucidrains_flex_attn,
+            "use_triton_impl": args.lucidrains_triton_kernel,
+            "use_gqa": args.lucidrains_gqa,
+        }
+    if args.msa_type == "NSAMSA":
+        kwargs = {
+            "use_diff_topk": args.nsamsa_use_diff_topk
+        }
+    else:
+        kwargs = {}
+
+    return {k: v for k, v in kwargs.items() if v is not None}
+
 
 
 if __name__ == "__main__":

@@ -1,0 +1,17 @@
+#!/bin/bash
+#SBATCH --partition=gpu_a100
+#SBATCH --gpus=1
+#SBATCH --job-name=small_cosmo
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --time=01:00:00
+#SBATCH --output=slurm_output_%A.out
+
+source erwin/bin/activate
+
+cd experiments
+
+uv run train_cosmology.py --data-path ../../../data/cosmology/ --size small --num-samples 2048 --batch-size 4 --use-wandb --test --experiment cosmology-small-2048 --msa-type LucidRains
+# srun python3 train_cosmology_sperwin.py --data-path ../cosmology_data --size small --num-samples 2048 --batch-size 8 --use-wandb --test --experiment cosmology-small-2048-sperwin --lr 1e-6
+
+# bugs: hardcoded num heads

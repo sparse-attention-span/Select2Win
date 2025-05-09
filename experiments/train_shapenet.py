@@ -55,13 +55,15 @@ def get_attn_kwargs(args):
             "use_flex_attn": args.lucidrains_flex_attn,
             "use_triton_impl": args.lucidrains_triton_kernel,
             "use_gqa": args.lucidrains_gqa,
+            "msa_type": args.msa_type
         }
     if args.msa_type == "NSAMSA":
         kwargs = {
-            "use_diff_topk": args.nsamsa_use_diff_topk
+            "use_diff_topk": args.nsamsa_use_diff_topk,
+            "msa_type": args.msa_type
         }
     else:
-        kwargs = {}
+        kwargs = { "msa_type": args.msa_type }
 
     return {k: v for k, v in kwargs.items() if v is not None}
 
@@ -149,6 +151,7 @@ if __name__ == "__main__":
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
+        drop_last=True,
         collate_fn=train_dataset.collate_fn,
         num_workers=args.batch_size,
     )
@@ -171,8 +174,8 @@ if __name__ == "__main__":
 
     if args.model == "erwin":
         model_config = erwin_configs[args.size]
-        if args.profile:
-            model_config = erwin_configs["profile"]
+        # if args.profile:
+        #     model_config = erwin_configs["profile"]
     else:
         raise NotImplementedError(f"Unknown model: {args.model}")
 
@@ -181,10 +184,12 @@ if __name__ == "__main__":
     model = torch.compile(model)
 
     optimizer = AdamW(model.parameters(), lr=args.lr)
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=5e-5)
 
     config = vars(args)
     config.update(model_config)
+    print(f"config msa_type: {config['msa_type']}")
     num_epochs = args.num_epochs
 
     if args.profile:

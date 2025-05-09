@@ -27,9 +27,9 @@ def save_checkpoint(model, optimizer, scheduler, config, val_loss, global_step):
     os.makedirs(save_dir, exist_ok=True)
     
     if config['model'] in ['erwin', 'pointtransformer']:
-        checkpoint_path = os.path.join(save_dir, f"{config['model']}_{config['experiment']}_{config['size']}_{config['seed']}_best.pt")
+        checkpoint_path = os.path.join(save_dir, f"{config['model']}_{config['msa_type']}_{config['experiment']}_{config['size']}_{config['seed']}_best.pt")
     else:
-        checkpoint_path = os.path.join(save_dir, f"{config['model']}_{config['experiment']}_{config['seed']}_best.pt")
+        checkpoint_path = os.path.join(save_dir, f"{config['model']}_{config['msa_type']}_{config['experiment']}_{config['seed']}_best.pt")
     torch.save(checkpoint, checkpoint_path)
     
     if config.get("use_wandb", False):
@@ -39,9 +39,9 @@ def save_checkpoint(model, optimizer, scheduler, config, val_loss, global_step):
 def load_checkpoint(model, optimizer, scheduler, config):
     save_dir = config.get('checkpoint_dir', 'checkpoints')
     if config['model'] in ['erwin', 'pointtransformer']:
-        checkpoint_path = os.path.join(save_dir, f"{config['model']}_{config['experiment']}_{config['size']}_{config['seed']}_best.pt")
+        checkpoint_path = os.path.join(save_dir, f"{config['model']}_{config['msa_type']}_{config['experiment']}_{config['size']}_{config['seed']}_best.pt")
     else:
-        checkpoint_path = os.path.join(save_dir, f"{config['model']}_{config['experiment']}_{config['seed']}_best.pt")
+        checkpoint_path = os.path.join(save_dir, f"{config['model']}_{config['msa_type']}_{config['experiment']}_{config['seed']}_best.pt")
     
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"No checkpoint found at {checkpoint_path}")
@@ -59,6 +59,10 @@ def load_checkpoint(model, optimizer, scheduler, config):
 def train_step(model, batch, optimizer, scheduler):
     optimizer.zero_grad()
     stat_dict = model.training_step(batch)
+    listt = []
+    for param in model.parameters():
+        listt.append(param.isnan().any())
+    print(f"are there any NaNs? {any(listt)}")
     stat_dict["train/loss"].backward()
     
     # Add gradient clipping
@@ -107,7 +111,11 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
     global_step = 0
     best_val_loss = float('inf')
     max_steps = config["num_epochs"]
+
+    print(f"use tqdm: {use_tqdm}")
+    print(f"max epochs: {max_steps}")
     
+    torch.autograd.set_detect_anomaly(True)
     while global_step < max_steps:
         iterator = tqdm(train_loader, desc=f"Training (step {global_step + 1}/{max_steps})") if use_tqdm else train_loader
         
@@ -119,6 +127,7 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
             
             for batch in iterator:
                 if global_step >= max_steps:
+                    print("breaking out")
                     break
                     
                 model.train()
@@ -171,7 +180,8 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
                         if not config.get("use_wandb", False):
                             print(f"New best validation loss: {best_val_loss:.4f}, saved checkpoint")
                     
-                    if config.get("use_wandb", False):
+                    if not use_tqdm:
+                        print("logging to wandb")
                         wandb.log({**train_stats, **val_stats, 'global_step': global_step}, step=global_step)
                     else:
                         loss_keys = [k for k in val_stats.keys() if "loss" in k]
@@ -179,6 +189,7 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
                             print(f"Validation {k}: {val_stats[k]:.4f}")
                 
                 global_step += 1
+                print(global_step)
                 
         if config.get("profile"):
             # events = prof.key_averages()
@@ -205,7 +216,7 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
         print(f"Loaded checkpoint from step {best_step} with validation loss {best_val_loss:.4f}")
         
         test_stats = validate(model, test_loader, config)
-        if config.get("use_wandb", False):
+        if not use_tqdm:
             wandb.log({
                 **{f"test/{k.replace('val/', '')}": v for k, v in test_stats.items()},
                 'global_step': global_step

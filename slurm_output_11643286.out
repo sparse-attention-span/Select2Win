@@ -1,0 +1,34 @@
+2025-05-08 11:52:23.699996: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2025-05-08 11:52:23.843877: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:467] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1746697943.896954 2971863 cuda_dnn.cc:8579] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1746697943.909896 2971863 cuda_blas.cc:1407] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+W0000 00:00:1746697944.019671 2971863 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1746697944.019727 2971863 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1746697944.019734 2971863 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1746697944.019739 2971863 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+2025-05-08 11:52:24.027426: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F AVX512_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+usage: train_cosmology.py [-h] [--model MODEL] [--data-path DATA_PATH]
+                          [--size {small,medium,large}]
+                          [--num-samples NUM_SAMPLES]
+                          [--num-epochs NUM_EPOCHS] [--batch-size BATCH_SIZE]
+                          [--use-wandb] [--lr LR]
+                          [--val-every-iter VAL_EVERY_ITER]
+                          [--experiment EXPERIMENT] [--test] [--seed SEED]
+train_cosmology.py: error: unrecognized arguments: --msa-type LucidRains
+
+JOB STATISTICS
+==============
+Job ID: 11643286
+Cluster: snellius
+User/Group: scur2588/scur2588
+State: RUNNING
+Nodes: 1
+Cores per node: 18
+CPU Utilized: 00:00:00
+CPU Efficiency: 0.00% of 00:10:48 core-walltime
+Job Wall-clock time: 00:00:36
+Memory Utilized: 0.00 MB
+Memory Efficiency: 0.00% of 120.00 GB (120.00 GB/node)
+WARNING: Efficiency statistics can only be obtained after the job has ended as seff tool is based on the accounting database data.

@@ -358,38 +358,42 @@ class LucidRains(nn.Module):
         return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
-        with torch.cuda.amp.autocast():
-            x = x + self.pe_proj(self.compute_rel_pos(pos))
-            if self.per_ball:
-                x = rearrange(x, "(n m) E -> n m E", m=self.ball_size)
-            else:
-                x = x.unsqueeze(0)
-            if not self.B:
-                self.B = x.shape[1]
-                printd("seq_len is", self.B)
-            elif x.shape[1] != self.B:
-                printd(f"points changed ({self.B} -> {x.shape[1]})")
-            disable_triton = not self.use_triton_impl
+        # with torch.cuda.amp.autocast():
+        assert not torch.isnan(x).any(), "NaN in inputs!"
+        assert not torch.isinf(x).any(), "Inf in inputs!"
+        assert not torch.isnan(pos).any(), "NaN in pos!"
+        assert not torch.isinf(pos).any(), "Inf in pos!"
+        x = x + self.pe_proj(self.compute_rel_pos(pos))
+        if self.per_ball:
+            x = rearrange(x, "(n m) E -> n m E", m=self.ball_size)
+        else:
+            x = x.unsqueeze(0)
+        if not self.B:
+            self.B = x.shape[1]
+            printd("seq_len is", self.B)
+        elif x.shape[1] != self.B:
+            printd(f"points changed ({self.B} -> {x.shape[1]})")
+        disable_triton = not self.use_triton_impl
 
-            seq_len = x.shape[1]
+        seq_len = x.shape[1]
 
-            if self.use_flex_attn and x.shape[1] == self.B:
-                sliding_window_flex_mask = create_sliding_mask(seq_len, self.sliding_window_size)
-                fine_selection_flex_mask = create_fine_mask(seq_len, self.selection_block_size)
-                x = self.sparse_attn(
-                    x,
-                    sliding_window_flex_mask=sliding_window_flex_mask,
-                    fine_selection_flex_mask=fine_selection_flex_mask
-                )
-            else:
-                x = self.sparse_attn(x, disable_triton_kernel=disable_triton)
+        if self.use_flex_attn and x.shape[1] == self.B:
+            sliding_window_flex_mask = create_sliding_mask(seq_len, self.sliding_window_size)
+            fine_selection_flex_mask = create_fine_mask(seq_len, self.selection_block_size)
+            x = self.sparse_attn(
+                x,
+                sliding_window_flex_mask=sliding_window_flex_mask,
+                fine_selection_flex_mask=fine_selection_flex_mask
+            )
+        else:
+            x = self.sparse_attn(x, disable_triton_kernel=disable_triton)
 
-            if self.per_ball:
-                x = rearrange(x, "n m E -> (n m) E", m=self.ball_size)
-            else:
-                x = x.squeeze(0)
+        if self.per_ball:
+            x = rearrange(x, "n m E -> (n m) E", m=self.ball_size)
+        else:
+            x = x.squeeze(0)
 
-            return x
+        return x
 
 class NSAMSA(nn.Module):
     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
@@ -659,6 +663,7 @@ class ErwinTransformer(nn.Module):
         assert len(dec_num_heads) == len(dec_depths) == len(strides)
         assert len(strides) == len(ball_sizes) - 1
 
+        print(f"msa_type = {msa_type}")
         self.rotate = rotate
         self.decode = decode
         self.ball_sizes = ball_sizes
