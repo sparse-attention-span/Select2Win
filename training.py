@@ -119,6 +119,7 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
     print(f"Batches per epoch: {num_train_batches}")
     
     torch.autograd.set_detect_anomaly(True)
+    logging_step = 0
     for epoch in range(config["num_epochs"]):
         print(f"epoch: {epoch}")
         # Enter the profiling context only if "profile" is set in the config.
@@ -142,9 +143,10 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
                     total_time = timing_end - timing_start
                     steps_per_second = timing_window_size / total_time
                     if config.get("use_wandb", False):
-                        wandb.log({"stats/steps_per_second": steps_per_second}, step=i)
+                        wandb.log({"stats/steps_per_second": steps_per_second}, step=logging_step)
                     else:
                         print(f"Steps per second: {steps_per_second:.2f}")
+                logging_step += 1
                 
                 stat_dict = train_step(model, batch, optimizer, scheduler)
                 print("trained")
@@ -155,7 +157,7 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
                         running_train_stats[k] += v.cpu().detach()
                 if not use_tqdm:
                     print("logging")
-                    wandb.log({f"{k}": v.item() for k, v in stat_dict.items() if "lr" not in k}, step=epoch)
+                    wandb.log({f"{k}": v.item() for k, v in stat_dict.items() if "lr" not in k}, step=logging_step)
                 
             # Validation and checkpointing
             print(f"Validation!")
@@ -174,7 +176,7 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
             
             if not use_tqdm:
                 print("logging to wandb")
-                wandb.log({**train_stats, **val_stats, 'global_step': epoch}, step=epoch)
+                wandb.log({**train_stats, **val_stats, 'global_step': epoch}, step=logging_step)
             else:
                 loss_keys = [k for k in val_stats.keys() if "loss" in k]
                 for k in loss_keys: 
