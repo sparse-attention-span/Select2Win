@@ -154,6 +154,7 @@ if __name__ == "__main__":
         drop_last=True,
         collate_fn=train_dataset.collate_fn,
         num_workers=args.batch_size,
+        persistent_workers=True,
     )
 
     valid_loader = DataLoader(
@@ -183,6 +184,7 @@ if __name__ == "__main__":
     model = ShapenetCarModel(main_model).cuda()
     model = torch.compile(model)
 
+    print(f"lr: {args.lr}")
     optimizer = AdamW(model.parameters(), lr=args.lr)
     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=5e-5)
@@ -195,4 +197,5 @@ if __name__ == "__main__":
     if args.profile:
         gc.collect()
     # Run the training
-    fit(config, model, optimizer, scheduler, train_loader, valid_loader, test_loader, num_epochs, args.val_every_iter)
+    # fit(config, model, optimizer, scheduler, train_loader, val_loader, test_loader=None, timing_window_start=100, timing_window_size=500):
+    fit(config, model, optimizer, scheduler, train_loader, valid_loader, test_loader=test_loader)

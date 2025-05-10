@@ -4,11 +4,17 @@
 #SBATCH --job-name=lucidLowLR
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=00:45:00
+#SBATCH --time=00:25:00
 #SBATCH --output=slurm/mem_test.%A.%N.out
 
+module purge
+module load 2023
+module load CUDA/12.4.0
 source erwin/bin/activate
 
+# cd ./SeerAttention/seer_attn/kernels/block_sparse_attention
+# make build
+# cd ../../../..
 cd experiments
 
-uv run train_shapenet.py --profile --lr 0.00001 --num-epochs 300 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --use-wandb 1 --msa-type LucidRains
+uv run train_shapenet.py --val-every-iter 20 --profile --lr 1e-5 --num-epochs 350 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --use-wandb 1 --test 1 --msa-type LucidRains

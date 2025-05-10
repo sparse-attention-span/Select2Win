@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from math import ceil
 from functools import partial
-from seer_attn.kernels.block_sparse_attention.block_sparse_seer_attn import block_sparse_attention
+# from seer_attn.kernels.block_sparse_attention.block_sparse_seer_attn import block_sparse_attention
 
 import torch
 import torch.nn.functional as F
@@ -430,9 +430,9 @@ class SparseAttention(Module):
 
         # handle if number of total blocks is less than number to select for fine attention
 
-        fq = q
-        fk = k
-        fv = v
+        fq = q.contiguous()
+        fk = k.contiguous()
+        fv = v.contiguous()
 
         num_selected = min(num_selected, importance_scores.shape[-1])
         has_selected_kv_for_fine_attn = num_selected > 0
@@ -450,27 +450,27 @@ class SparseAttention(Module):
 
             if self.use_triton_kernel and not disable_triton_kernel:
 
-                # from native_sparse_attention_pytorch.triton_native_sparse_attention import native_sparse_attend
-
-                # fmask = selected_importance_values > 1e-10
-
-                # fine_attn_out = native_sparse_attend(
-                #     fq, fk, fv,
-                #     self.selection_block_size,
-                #     selected_block_indices,
-                #     fmask,
-                #     sel_scale = gates,
-                #     include_block_causal = False
-                # )
+                from native_sparse_attention_pytorch.triton_native_sparse_attention import native_sparse_attend
 
                 fmask = selected_importance_values > 1e-10
 
-                # block_sparse_attention(q, k, v, block_mask, is_causal=True, sm_scal=1.0)
-                fine_attn_out = block_sparse_attention(
-                fq, fk, fv,
-                fmask,
-                is_causal=False,
-                sm_scal=self.scale)
+                fine_attn_out = native_sparse_attend(
+                    fq, fk, fv,
+                    self.selection_block_size,
+                    selected_block_indices,
+                    fmask,
+                    sel_scale = gates,
+                    include_block_causal = False
+                )
+
+                # fmask = selected_importance_values > 1e-10
+
+                # # block_sparse_attention(q, k, v, block_mask, is_causal=True, sm_scal=1.0)
+                # fine_attn_out = block_sparse_attention(
+                # fq, fk, fv,
+                # fmask,
+                # is_causal=False,
+                # sm_scale=self.scale)
 
             elif exists(fine_selection_flex_mask):
                 assert not self.use_diff_topk, 'differential topk is not available for flex attention'
