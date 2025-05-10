@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --partition=gpu_a100
+#SBATCH --partition=gpu_h100
 #SBATCH --gpus=1
 #SBATCH --job-name=erwinOGSN
 #SBATCH --ntasks=1
@@ -11,4 +11,4 @@ source erwin/bin/activate
 
 cd experiments
 
-uv run train_shapenet.py --lr 1e-3 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --use-wandb 1 --test 1 --msa-type BallMSA
+uv run train_shapenet.py --num-epochs 10 --lr 1e-3 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --use-wandb 1 --test 1 --msa-type BallMSA

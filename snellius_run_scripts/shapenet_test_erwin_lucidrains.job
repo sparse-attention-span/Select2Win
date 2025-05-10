@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --partition=gpu_a100
+#SBATCH --partition=gpu_h100
 #SBATCH --gpus=1
 #SBATCH --job-name=lucidLowLR
 #SBATCH --ntasks=1
@@ -17,4 +17,4 @@ source erwin/bin/activate
 # cd ../../../..
 cd experiments
 
-uv run train_shapenet.py --profile --lr 1e-5 --num-epochs 350 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --use-wandb 1 --test 1 --msa-type LucidRains
+uv run train_shapenet.py --lr 1e-5 --num-epochs 10 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --use-wandb 1 --test 1 --msa-type LucidRains

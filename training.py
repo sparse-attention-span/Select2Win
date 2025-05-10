@@ -81,22 +81,31 @@ def validate(model, val_loader, config):
     num_batches = 0
     
     use_tqdm = not config.get("use_wandb", False)
-    iterator = tqdm(val_loader, desc="Validation") if use_tqdm else val_loader
-    
-    for batch in iterator:
-        batch = {k: v.cuda() for k, v in batch.items()}
-        stat_dict = model.validation_step(batch)
-        
-        for k, v in stat_dict.items():
-            if k not in val_stats:
-                val_stats[k] = 0
-            val_stats[k] += v.cpu().detach()
-        
-        if use_tqdm:
-            iterator.set_postfix({"Loss": f"{stat_dict['val/loss'].item():.4f}"})
+    print(f"total number of batch items in val loader: {len(val_loader)}")
+    # iterator = tqdm(val_loader, desc="Validation") if use_tqdm else val_loader
+
+    print("About to create val iterator", flush=True)
+    it = iter(val_loader)
+    print("Iterator created, now fetching first batch…", flush=True)
+    _ = next(it)   # blocks here until workers yield
+    print("Got first validation batch!", flush=True)
+
+    with torch.no_grad():
+        for batch_num, batch in enumerate(it):
+            num_batches += 1
+            print(f"validation batch: {batch_num}", flush=True)
+            batch_num += 1
+            batch = {k: v.cuda() for k, v in batch.items()}
+            stat_dict = model.validation_step(batch)
             
-        num_batches += 1
-    
+            for k, v in stat_dict.items():
+                if k not in val_stats:
+                    val_stats[k] = 0
+                val_stats[k] += v.cpu().detach()
+            
+            # if use_tqdm:
+            #     iterator.set_postfix({"Loss": f"{stat_dict['val/loss'].item():.4f}"})
+    print("finished validation, calculating stats", flush=True)
     avg_stats = {f"avg/{k}": v / num_batches for k, v in val_stats.items()}
     return avg_stats
 
@@ -149,14 +158,14 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
                 logging_step += 1
                 
                 stat_dict = train_step(model, batch, optimizer, scheduler)
-                print("trained")
+                # print("trained")
                 for k, v in stat_dict.items():
                     if "lr" not in k:
                         if k not in running_train_stats:
                             running_train_stats[k] = 0
                         running_train_stats[k] += v.cpu().detach()
                 if not use_tqdm:
-                    print("logging")
+                    # print("logging")
                     wandb.log({f"{k}": v.item() for k, v in stat_dict.items() if "lr" not in k}, step=logging_step)
                 
             # Validation and checkpointing
@@ -164,16 +173,17 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
             train_stats = {f"avg/{k}": v / num_train_batches for k, v in running_train_stats.items()}
             
             running_train_stats = {}
-            
+            print(f"running validation")
             val_stats = validate(model, val_loader, config)
             current_val_loss = val_stats['avg/val/loss']
             
             if current_val_loss < best_val_loss:
+                print("saving new best model")
                 best_val_loss = current_val_loss
-                save_checkpoint(model, optimizer, scheduler, config, best_val_loss, epoch)
+                save_checkpoint(model, optimizer, scheduler, config, best_val_loss, logging_step)
                 if not config.get("use_wandb", False):
                     print(f"New best validation loss: {best_val_loss:.4f}, saved checkpoint")
-            
+                print("done saving new best model")
             if not use_tqdm:
                 print("logging to wandb")
                 wandb.log({**train_stats, **val_stats, 'global_step': epoch}, step=logging_step)
@@ -197,7 +207,7 @@ def fit(config, model, optimizer, scheduler, train_loader, val_loader, test_load
             wandb.log({
                 **{f"test/{k.replace('val/', '')}": v for k, v in test_stats.items()},
                 'global_step': config["num_epochs"]
-            }, step=config["num_epochs"])
+            }, step=logging_step)
         else:
             loss_keys = [k for k in test_stats.keys() if "loss" in k]
             for k in loss_keys:

@@ -163,6 +163,7 @@ if __name__ == "__main__":
         shuffle=False,
         collate_fn=train_dataset.collate_fn,
         num_workers=args.batch_size,
+        persistent_workers=True,
     )
 
     test_loader = DataLoader(
@@ -171,6 +172,7 @@ if __name__ == "__main__":
         shuffle=False,
         collate_fn=train_dataset.collate_fn,
         num_workers=args.batch_size,
+        persistent_workers=True,
     )
 
     if args.model == "erwin":
