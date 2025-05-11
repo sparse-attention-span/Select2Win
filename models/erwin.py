@@ -23,8 +23,9 @@ MSATYPE = "LucidRains"
 USE_FLEX_ATTN = False
 USE_TRITON_IMPL = True
 USE_GQA = True
-USE_MINIBALLATTN = False
+USE_MINIBALLATTN = True
 PER_BALL = False
+TOPK = 2
 
 LUCIDRAINS_DEFAULTS = {
     "USE_FLEX_ATTN": USE_FLEX_ATTN,
@@ -32,6 +33,7 @@ LUCIDRAINS_DEFAULTS = {
     "USE_GQA": USE_GQA,
     "USE_MINIBALLATTN": USE_MINIBALLATTN,
     "PER_BALL": PER_BALL,
+    "TOPK": TOPK,
 }
 
 # Enable debug prints
@@ -320,6 +322,7 @@ class LucidRains(nn.Module):
         use_triton_impl: bool = USE_TRITON_IMPL,
         use_gqa: bool = USE_GQA,
         use_miniballattn: bool = USE_MINIBALLATTN,
+        topk: int = TOPK,
     ):
         super().__init__()
         self.dim = dim
@@ -340,14 +343,12 @@ class LucidRains(nn.Module):
             COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//2
 
             FINE_BLOCK_SIZE = ball_size
-            NUM_FINE_SELECTED = 1
         else:
             SLIDING_WINDOW_SIZE = ball_size//8
             COMPRESS_BLOCK_SIZE = ball_size//8
             COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//16
 
             FINE_BLOCK_SIZE = ball_size//8
-            NUM_FINE_SELECTED = 1
 
         # should redouce memory usage
         kv_heads = num_heads//8 if use_gqa else num_heads
@@ -371,7 +372,7 @@ class LucidRains(nn.Module):
                 heads = kv_heads,
             ),
             selection_block_size = FINE_BLOCK_SIZE,
-            num_selected_blocks = NUM_FINE_SELECTED,
+            num_selected_blocks = topk,
             use_diff_topk = False,
             use_triton_kernel = self.use_triton_impl,
             query_heads_share_selected_kv = True,
