@@ -181,7 +181,8 @@ class SparseAttention(Module):
         query_heads_share_selected_kv = True, # if set to True, importance score is averaged across query heads to select top-n buckets of kv per kv head - but can be set to False for each query head within a group to look at different sets of kv buckets. will be more memory and compute of course
         compress_mlp: Module | None = None,
         compress_mlp_expand_factor = 1.,
-        strategy_combine_mlp: Module | None = None
+        strategy_combine_mlp: Module | None = None,
+        sliding_window_attn: Module | None = None,
     ):
         super().__init__()
 
@@ -218,16 +219,16 @@ class SparseAttention(Module):
         self.qkv_split = qkv_split
 
         # sliding window strategy
+        if sliding_window_size and not exists(sliding_window_attn):
+            sliding_window_attn = LocalAttention(
+                dim = dim_head,
+                window_size = sliding_window_size,
+                exact_windowsize = True,
+                autopad = True,
+                use_rotary_pos_emb = False
+            )
 
-        self.sliding_window = LocalAttention(
-            dim = dim_head,
-            window_size = sliding_window_size,
-            exact_windowsize = True,
-            autopad = True,
-            use_rotary_pos_emb = False
-        )
-
-        self.sliding_window_size = sliding_window_size
+        self.sliding_window = sliding_window_attn
 
         # compress strategy
 
@@ -284,12 +285,20 @@ class SparseAttention(Module):
         # they combine the three sparse branches through a learned combine with sigmoid activation
 
         if not exists(strategy_combine_mlp):
-            strategy_combine_mlp = nn.Linear(dim, 3 * heads)
+            if sliding_window_size:
+                strategy_combine_mlp = nn.Linear(dim, 3 * heads)
 
-            # init to sliding windows first, as network tends to pick up on local patterns first before distant ones
+                # init to sliding windows first, as network tends to pick up on local patterns first before distant ones
 
-            nn.init.zeros_(strategy_combine_mlp.weight)
-            strategy_combine_mlp.bias.data.copy_(tensor([-2., -2., 2.] * heads))
+                nn.init.zeros_(strategy_combine_mlp.weight)
+                strategy_combine_mlp.bias.data.copy_(tensor([-2., -2., 2.] * heads))
+            else:
+                strategy_combine_mlp = nn.Linear(dim, 2 * heads)
+
+                # no sliding window.
+
+                nn.init.zeros_(strategy_combine_mlp.weight)
+                strategy_combine_mlp.bias.data.copy_(tensor([-2., -2.] * heads))
 
         self.to_strategy_combine = nn.Sequential(
             strategy_combine_mlp,
@@ -559,22 +568,28 @@ class SparseAttention(Module):
 
         # 3. overlapping sliding window, this is unsurprising and expected - `s` for sliding
 
-        sq = q
-        sk = k
-        sv = v
+        if self.sliding_window:
+            sq = q
+            sk = k
+            sv = v
 
-        if exists(sliding_window_flex_mask):
-            sliding_window_attn_out = flex_attention(sq, sk, sv, block_mask = sliding_window_flex_mask, enable_gqa = True)
-        else:
-            sk, sv = tuple(repeat(t, 'b h ... -> b (h num_grouped_queries) ...', num_grouped_queries = self.num_grouped_queries) for t in (sk, sv))
+            if exists(sliding_window_flex_mask):
+                sliding_window_attn_out = flex_attention(sq, sk, sv, block_mask = sliding_window_flex_mask, enable_gqa = True)
+            else:
+                sk, sv = tuple(repeat(t, 'b h ... -> b (h num_grouped_queries) ...', num_grouped_queries = self.num_grouped_queries) for t in (sk, sv))
 
-            sliding_window_attn_out = self.sliding_window(sq, sk, sv)
+                sliding_window_attn_out = self.sliding_window(sq, sk, sv)
 
         # combine strategies
 
         strategy_weighted_combine = self.to_strategy_combine(inp)
 
-        out = einsum(strategy_weighted_combine, stack([compressed_attn_out, fine_attn_out, sliding_window_attn_out]), 'b h n s, s b h n d -> b h n d')
+        if self.sliding_window:
+            strategy_concat = [compressed_attn_out, fine_attn_out, sliding_window_attn_out]
+        else:
+            strategy_concat = [compressed_attn_out, fine_attn_out]
+
+        out = einsum(strategy_weighted_combine, stack(strategy_concat), 'b h n s, s b h n d -> b h n d')
 
         # merge heads and combine them
 

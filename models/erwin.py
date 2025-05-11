@@ -23,12 +23,14 @@ MSATYPE = "LucidRains"
 USE_FLEX_ATTN = False
 USE_TRITON_IMPL = True
 USE_GQA = True
+USE_MINIBALLATTN = False
 PER_BALL = False
 
 LUCIDRAINS_DEFAULTS = {
     "USE_FLEX_ATTN": USE_FLEX_ATTN,
     "USE_TRITON_IMPL": USE_TRITON_IMPL,
     "USE_GQA": USE_GQA,
+    "USE_MINIBALLATTN": USE_MINIBALLATTN,
     "PER_BALL": PER_BALL,
 }
 
@@ -279,6 +281,32 @@ class BallMSA(nn.Module):
         x = rearrange(x, "n H m E -> (n m) (H E)", H=self.num_heads, m=self.ball_size)
         return self.proj(x)
 
+class MiniBallAttn(nn.Module):
+    """Mini Ball Attention module. """
+    def __init__(
+        self, ball_size: int,
+    ):
+        super().__init__()
+        self.ball_size = ball_size
+        # self.sigma_att = nn.Parameter(-1 + 0.01 * torch.randn((1, num_heads, 1, 1)))
+
+    # @torch.no_grad()
+    # def create_attention_mask(self, pos: torch.Tensor):
+    #     """Distance-based attention bias (eq. 10)."""
+    #     pos = rearrange(pos, "(n m) d -> n m d", m=self.ball_size)
+    #     return self.sigma_att * torch.cdist(pos, pos, p=2).unsqueeze(1)
+
+    #attn_mask=self.create_attention_mask(pos)
+
+    def forward(self, q, k, v):
+        q, k, v = tuple(rearrange(t, "B H (n m) ... -> (B n) H m ...", m=self.ball_size, B=1) for t in (q, k, v))
+        x = F.scaled_dot_product_attention(
+            q, k, v, enable_gqa=True
+        )
+        x = rearrange(x, "(B n) H m ... -> B H (n m) ...", m=self.ball_size, B=1)
+
+        return x
+
 class LucidRains(nn.Module):
     """ NSA wrapper disregarding ball structure """
     def __init__(
@@ -291,6 +319,7 @@ class LucidRains(nn.Module):
         use_flex_attn: bool = USE_FLEX_ATTN,
         use_triton_impl: bool = USE_TRITON_IMPL,
         use_gqa: bool = USE_GQA,
+        use_miniballattn: bool = USE_MINIBALLATTN,
     ):
         super().__init__()
         self.dim = dim
@@ -301,6 +330,9 @@ class LucidRains(nn.Module):
         self.use_triton_impl = use_triton_impl
         if use_flex_attn:
             assert flex_attention is not None
+
+        if use_miniballattn:
+            sliding_window_attn = MiniBallAttn(ball_size)
 
         if not per_ball:
             SLIDING_WINDOW_SIZE = ball_size
@@ -341,8 +373,9 @@ class LucidRains(nn.Module):
             selection_block_size = FINE_BLOCK_SIZE,
             num_selected_blocks = NUM_FINE_SELECTED,
             use_diff_topk = False,
-            use_triton_kernel=self.use_triton_impl,
-            query_heads_share_selected_kv = True
+            use_triton_kernel = self.use_triton_impl,
+            query_heads_share_selected_kv = True,
+            sliding_window_attn = sliding_window_attn if use_miniballattn else None
         )
 
         self.sliding_window_size = SLIDING_WINDOW_SIZE
