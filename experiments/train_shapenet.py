@@ -2,6 +2,7 @@ import sys
 sys.path.append("../../")
 
 import argparse
+import yaml
 import torch
 torch.set_float32_matmul_precision("high")
 from torch.utils.data import DataLoader
@@ -22,6 +23,7 @@ def parse_args():
     parser.add_argument("--model", type=str, default="erwin",
                         choices=('mpnn', 'pointtransformer', 'pointnetpp', 'erwin'))
     parser.add_argument("--data-path", type=str, default="../shapenet_car/preprocessed")
+    parser.add_argument("--config", type=str, default="")
     parser.add_argument("--size", type=str, default="small",
                         choices=('small', 'medium', 'large'))
     parser.add_argument("--num-epochs", type=int, default=100000)
@@ -39,33 +41,35 @@ def parse_args():
     parser.add_argument("--msa-type", type=str, default="BallMSA",
                         choices=["BallMSA", "NSAMSA", "LucidRains"])
 
-    parser.add_argument("--lucidrains-per-ball", type=bool)
-    parser.add_argument("--lucidrains-gqa", type=bool)
-    parser.add_argument("--lucidrains-triton-kernel", type=bool)
-    parser.add_argument("--lucidrains-flex-attn", type=bool)
 
-    parser.add_argument("--nsamsa-use-diff-topk", type=bool)
+
+    # parser.add_argument("--lucidrains-per-ball", type=bool)
+    # parser.add_argument("--lucidrains-gqa", type=bool)
+    # parser.add_argument("--lucidrains-triton-kernel", type=bool)
+    # parser.add_argument("--lucidrains-flex-attn", type=bool)
+
+    # parser.add_argument("--nsamsa-use-diff-topk", type=bool)
 
     return parser.parse_args()
 
-def get_attn_kwargs(args):
-    if args.msa_type == "LucidRains":
-        kwargs =  {
-            "per_ball": args.lucidrains_per_ball,
-            "use_flex_attn": args.lucidrains_flex_attn,
-            "use_triton_impl": args.lucidrains_triton_kernel,
-            "use_gqa": args.lucidrains_gqa,
-            "msa_type": args.msa_type
-        }
-    if args.msa_type == "NSAMSA":
-        kwargs = {
-            "use_diff_topk": args.nsamsa_use_diff_topk,
-            "msa_type": args.msa_type
-        }
-    else:
-        kwargs = { "msa_type": args.msa_type }
+# def get_attn_kwargs(args):
+#     if args.msa_type == "LucidRains":
+#         kwargs =  {
+#             "per_ball": args.lucidrains_per_ball,
+#             "use_flex_attn": args.lucidrains_flex_attn,
+#             "use_triton_impl": args.lucidrains_triton_kernel,
+#             "use_gqa": args.lucidrains_gqa,
+#             "msa_type": args.msa_type
+#         }
+#     if args.msa_type == "NSAMSA":
+#         kwargs = {
+#             "use_diff_topk": args.nsamsa_use_diff_topk,
+#             "msa_type": args.msa_type
+#         }
+#     else:
+#         kwargs = { "msa_type": args.msa_type }
 
-    return {k: v for k, v in kwargs.items() if v is not None}
+#     return {k: v for k, v in kwargs.items() if v is not None}
 
 erwin_configs = {
     "profile": {
@@ -176,13 +180,18 @@ if __name__ == "__main__":
     )
 
     if args.model == "erwin":
-        model_config = erwin_configs[args.size]
+        if args.config:
+            with open(f"{args.config}", "r") as f:
+                model_config = dict(yaml.safe_load(f))
+                print(model_config)
+        else:
+            model_config = erwin_configs[args.size] | {"msa_type": args.msa_type}
         # if args.profile:
         #     model_config = erwin_configs["profile"]
     else:
         raise NotImplementedError(f"Unknown model: {args.model}")
 
-    main_model = model_cls[args.model](**model_config, **get_attn_kwargs(args))
+    main_model = model_cls[args.model](**model_config)
     model = ShapenetCarModel(main_model).cuda()
     model = torch.compile(model)
 

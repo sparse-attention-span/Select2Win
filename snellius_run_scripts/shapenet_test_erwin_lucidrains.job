@@ -17,4 +17,6 @@ source erwin/bin/activate
 # cd ../../../..
 cd experiments
 
-uv run train_shapenet.py --lr 1e-5 --num-epochs 10 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --use-wandb 1 --test 1 --msa-type LucidRains
+uv run train_shapenet.py --lr 1e-5 --num-epochs 10 --use-wandb 1 --test 1 \
+ --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" \
+ --config "configs/lucidrains_smallconfig.yaml"

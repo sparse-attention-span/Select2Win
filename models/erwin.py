@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Tuple
+import inspect
 
 import math
 import torch
@@ -18,23 +19,13 @@ from native_sparse_attention_pytorch.compress_networks import GroupedMLP # lib
 
 from balltree import build_balltree_with_rotations
 
-# Defaults
-MSATYPE = "LucidRains"
-USE_FLEX_ATTN = False
-USE_TRITON_IMPL = True
-USE_GQA = True
-USE_MINIBALLATTN = True
-PER_BALL = False
-TOPK = 2
-
-LUCIDRAINS_DEFAULTS = {
-    "USE_FLEX_ATTN": USE_FLEX_ATTN,
-    "USE_TRITON_IMPL": USE_TRITON_IMPL,
-    "USE_GQA": USE_GQA,
-    "USE_MINIBALLATTN": USE_MINIBALLATTN,
-    "PER_BALL": PER_BALL,
-    "TOPK": TOPK,
-}
+def get_default_args(func):
+    signature = inspect.signature(func)
+    return {
+        k: v.default
+        for k, v in signature.parameters.items()
+        if v.default is not inspect.Parameter.empty
+    }
 
 # Enable debug prints
 DBGPRINTS = False
@@ -316,13 +307,15 @@ class LucidRains(nn.Module):
         dim: int,
         num_heads: int,
         ball_size: int,
-        dimensionality: int = 3,
-        per_ball: bool = PER_BALL,
-        use_flex_attn: bool = USE_FLEX_ATTN,
-        use_triton_impl: bool = USE_TRITON_IMPL,
-        use_gqa: bool = USE_GQA,
-        use_miniballattn: bool = USE_MINIBALLATTN,
-        topk: int = TOPK,
+        dimensionality: int,
+        per_ball: bool = False,
+        use_flex_attn: bool = False,
+        use_triton_impl: bool = True,
+        use_miniballattn: bool = True,
+        topk: int = 2,
+        kv_head_factor: int = 4,
+        dim_head_factor: int = 2,
+        compress_stride_fraction: int = 2,
     ):
         super().__init__()
         self.dim = dim
@@ -340,20 +333,16 @@ class LucidRains(nn.Module):
         if not per_ball:
             SLIDING_WINDOW_SIZE = ball_size
             COMPRESS_BLOCK_SIZE = ball_size
-            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//2
-
+            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//compress_stride_fraction
             FINE_BLOCK_SIZE = ball_size
         else:
             SLIDING_WINDOW_SIZE = ball_size//8
             COMPRESS_BLOCK_SIZE = ball_size//8
-            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//16
-
+            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//(8*compress_stride_fraction)
             FINE_BLOCK_SIZE = ball_size//8
 
-        # should redouce memory usage
-        kv_heads = num_heads//8 if use_gqa else num_heads
-
-        dim_head = dim//num_heads*2
+        dim_head = dim//num_heads * dim_head_factor
+        kv_heads = num_heads // kv_head_factor
 
         assert dim % num_heads == 0
         assert not (use_triton_impl and use_flex_attn)
@@ -558,7 +547,7 @@ class ErwinTransformerBlock(nn.Module):
         ball_size: int,
         mlp_ratio: int,
         dimensionality: int = 3,
-        msa_type: str = MSATYPE,
+        msa_type: str = "BallMSA",
         attn_kwargs: dict = {},
     ):
         super().__init__()
@@ -596,7 +585,7 @@ class BasicLayer(nn.Module):
         mlp_ratio: int,
         rotate: bool,
         dimensionality: int = 3,
-        msa_type: str = MSATYPE,
+        msa_type: str = "BallMSA",
         attn_kwargs: dict = {},
     ):
         super().__init__()
@@ -689,7 +678,7 @@ class ErwinTransformer(nn.Module):
         mlp_ratio: int = 4,
         dimensionality: int = 3,
         mp_steps: int = 3,
-        msa_type: str = MSATYPE,
+        msa_type: str = "BallMSA",
         attn_kwargs: dict = {},
     ):
         super().__init__()
@@ -716,7 +705,7 @@ class ErwinTransformer(nn.Module):
         print(f"using {msa_type}")
 
         if msa_type == "LucidRains":
-            for kw, v in LUCIDRAINS_DEFAULTS.items():
+            for kw, v in get_default_args(LucidRains.__init__).items():
                 print(f"{kw}:", attn_kwargs[kw] if kw in attn_kwargs.keys() else v)
 
 
