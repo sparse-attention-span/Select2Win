@@ -1,11 +1,16 @@
 c_in: 32
 c_hidden: 32
-ball_sizes: [256, 256, 256]
-enc_num_heads: [2, 2, 2]
-enc_depths: [2, 2, 2]
-dec_num_heads: [2,2]
-dec_depths: [2, 2]
-strides: [1,1]
+ball_sizes: [256, 256, 256, 256]
+# enc_num_heads: [2, 2, 2]
+# enc_depths: [2, 2, 2]
+# dec_num_heads: [2,2]
+# dec_depths: [2, 2]
+# strides: [1,1]
+enc_num_heads: [2, 2, 2, 2]
+enc_depths: [2, 2, 6, 2]
+dec_num_heads: [2, 2, 2]
+dec_depths: [2, 2, 2]
+strides: [2, 2, 2]
 rotate: 45
 mp_steps: 3
 msa_type: "LucidRains"
@@ -17,4 +22,3 @@ attn_kwargs:
     kv_head_factor: 1
     topk: 8
     dim_head_factor: 1
-    bs: 8

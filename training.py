@@ -14,7 +14,7 @@ from contextlib import ExitStack
 import pandas as pd
 
 
-def setup_wandb_logging(model, config, project_name="ballformer_fixed_new_cosmo"):
+def setup_wandb_logging(model, config, project_name="ballformer_fixed_new_cosmo_test"):
     wandb.init(
         project=project_name,
         config=config,

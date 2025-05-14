@@ -25,16 +25,16 @@ def parse_args():
     parser.add_argument("--data-path", type=str, default="../shapenet_car/preprocessed")
     parser.add_argument("--config", type=str, default="")
     parser.add_argument("--size", type=str, default="small",
-                        choices=('small', 'medium', 'large'))
+                        choices=('small', 'medium', 'large', 'debug'))
     parser.add_argument("--num-epochs", type=int, default=100000)
     parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--use-wandb", type=int, default=1)
+    parser.add_argument("--use-wandb", action="store_true")
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--val-every-iter", type=int, default=100,
                         help="Validation frequency")
     parser.add_argument("--experiment", type=str, default="shapenet",
                         help="Experiment name in wandb")
-    parser.add_argument("--test", type=int, default=0)
+    parser.add_argument("--test", action="store_true", default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--knn", type=int, default=8)
     parser.add_argument("--profile", action="store_true", help="Use minimal profile configuration for testing")
@@ -72,6 +72,18 @@ def parse_args():
 #     return {k: v for k, v in kwargs.items() if v is not None}
 
 erwin_configs = {
+    "debug": {
+        "c_in": 64,
+        "c_hidden": 64,
+        "ball_sizes": [128, 128],
+        "enc_num_heads": [4, 4],
+        "enc_depths": [6, 6],
+        "dec_num_heads": [4],
+        "dec_depths": [6],
+        "strides": [1],
+        "rotate": 45,
+        "mp_steps": 3,
+    },
     "profile": {
         "c_in": 64,
         "c_hidden": 64,
@@ -207,6 +219,8 @@ if __name__ == "__main__":
 
     if args.profile:
         gc.collect()
+
+    torch.autograd.set_detect_anomaly(True)
     # Run the training
     # fit(config, model, optimizer, scheduler, train_loader, val_loader, test_loader=None, timing_window_start=100, timing_window_size=500):
     fit(config, model, optimizer, scheduler, train_loader, valid_loader, test_loader=test_loader)
