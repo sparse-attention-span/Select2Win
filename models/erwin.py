@@ -468,15 +468,15 @@ class NSAMSA(nn.Module):
             K=3,
         )
         # tensor are of shape b h (n m) topk
-        num_points = q.shape[-2] * q.shape[-1]
+        num_points = q.shape[-3] * q.shape[-2]
         topk_indices = self.select_balls(q, k)
 
         # print(topk_indices[0, 0, 0])
 
         # gates = straight_through(topk_values, 1.0) if self.use_diff_topk else None
         
-        k = rearrange(k, "b n H m E -> b H n m E")
-        v = rearrange(v, "b n H m E -> b H n m E")
+        # k = rearrange(k, "b H n m E -> b n H m E")
+        # v = rearrange(v, "b H n m E -> b n H m E")
         
         # # out = torch.zeros_like(v)
         # out = rearrange(out, "b H n m E -> b H nm E")
