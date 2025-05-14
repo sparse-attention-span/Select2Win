@@ -7,6 +7,7 @@ experiments/wandb/
 shapenet_car/
 md_dataset/
 experiments/log_dir
+checkpoints/
 
 slurm
 

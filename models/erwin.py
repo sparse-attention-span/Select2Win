@@ -471,20 +471,32 @@ class NSAMSA(nn.Module):
         num_points = q.shape[-3] * q.shape[-2]
         topk_indices = self.select_balls(q, k)
 
-        # print(topk_indices[0, 0, 0])
+        # q = rearrange(q, "b H n m E -> b H (n m) E")
+        # out = torch.zeros_like(v)
+        # out = rearrange(out, "b H n m E -> b H (n m) E")
 
-        # gates = straight_through(topk_values, 1.0) if self.use_diff_topk else None
-        
-        # k = rearrange(k, "b H n m E -> b n H m E")
-        # v = rearrange(v, "b H n m E -> b n H m E")
-        
-        # # out = torch.zeros_like(v)
-        # out = rearrange(out, "b H n m E -> b H nm E")
-        
-        # for t in range(num_points):
-        #     idx = topk_indices[:, :, t, :].reshape(-1)
-        #     k_t = k[:, :, idx, :]
-        #     v_t = v[:, :, idx, :]
+        # E = v.shape[-1]
+        # M = v.shape[-2]
+
+        # for b in range(num_batches):
+        #     for h in range(self.num_heads):
+        #         for t in range(num_points):
+        #             # topk_indices[b,h,t] is a 1D tensor of length topk
+        #             idx = topk_indices[b, h, t]               # -> [topk]
+        #             # select the keys and values for this (batch, head, position)
+        #             k_t = k[b, h, idx, :, :]                  # -> [topk, M, E]
+        #             v_t = v[b, h, idx, :, :]                  # -> [topk, M, E]
+        #             # flatten the topk blocks
+        #             k_t = rearrange(k_t, "topk M E -> (topk M) E")                  # -> [topk * M, E]
+        #             v_t = rearrange(v_t, "topk M E -> (topk M) E")                  # -> [topk * M, E]
+        #             # fetch the query vector
+        #             q_t = q[b, h, t].unsqueeze(0)             # -> [1, E]
+        #             # compute attention weights
+        #             attn = torch.softmax((q_t @ k_t.t()) * (E ** -0.5), dim=-1)  # -> [1, topk*M]
+        #             # compute output
+        #             out_val = attn @ v_t                      # -> [1, E]
+        #             # place back into out; expand to (M, E) if needed or squeeze
+        #             out[b, h, t] = out_val.squeeze(0)          # -> [1, E] -> [E]
 
         k = repeat(k, "b H n m E -> b H nm n m E", nm=num_points)
         v = repeat(v, "b H n m E -> b H nm n m E", nm=num_points)

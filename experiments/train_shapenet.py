@@ -92,10 +92,10 @@ erwin_configs = {
     "small": {
         "c_in": 64,
         "c_hidden": 64,
-        "ball_sizes": [256, 256],
-        "enc_num_heads": [1, 1],
+        "ball_sizes": [16, 16],
+        "enc_num_heads": [8, 8],
         "enc_depths": [6, 6],
-        "dec_num_heads": [1],
+        "dec_num_heads": [8],
         "dec_depths": [6],
         "strides": [1],
         "rotate": 45,
