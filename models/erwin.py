@@ -409,6 +409,7 @@ class NSAMSA(nn.Module):
         dimensionality: int = 3,
         topk: int = 2,
         use_diff_topk: bool = True,
+        num_batches = 1,
     ):
         super().__init__()
         self.dim = dim
@@ -417,6 +418,7 @@ class NSAMSA(nn.Module):
         self.topk = topk
         self.scale = dim**-0.5
         self.use_diff_topk = use_diff_topk
+        self.num_batches = num_batches
 
         self.qkv = nn.Linear(dim, 3 * dim)
         self.proj = nn.Linear(dim, dim)
@@ -461,8 +463,8 @@ class NSAMSA(nn.Module):
         qkv = self.qkv(x)
         q, k, v = repeat(
             qkv,
-            "(n m) (H E K) -> K b H n m E",
-            b=1,
+            "(b n m) (H E K) -> K b H n m E",
+            b=self.num_batches,
             H=self.num_heads,
             m=self.ball_size,
             K=3,
@@ -479,7 +481,7 @@ class NSAMSA(nn.Module):
         v = rearrange(v, "b n H m E -> b H n m E")
         
         out = torch.zeros_like(v)
-        out = rearrange(out, "b H n m E -> b H nm E")
+        # out = rearrange(out, "b H n m E -> b H nm E")
         
         for t in range(num_points):
             idx = topk_indices[:, :, t, :].reshape(-1)
@@ -512,6 +514,7 @@ class ErwinTransformerBlock(nn.Module):
         msa_type: str,
         dimensionality: int = 3,
         attn_kwargs: dict = {},
+        num_batches: int = 1,
     ):
         super().__init__()
         self.ball_size = ball_size
@@ -524,6 +527,8 @@ class ErwinTransformerBlock(nn.Module):
             "LucidRains": LucidRains,
         }[msa_type]
 
+        if msa_type == "NSAMSA":
+            attn_kwargs["num_batches"] = num_batches
         self.BMSA = MSABase(
             dim, num_heads, ball_size, dimensionality=dimensionality, **attn_kwargs
         )
@@ -591,14 +596,17 @@ class BasicLayer(nn.Module):
                 node.tree_idx_rot
             )  # map from rotated to original
 
+        num_batches = node.batch_idx.max() + 1
+        assert num_batches > 0
+
         for i, (rotate, blk) in enumerate(zip(self.rotate, self.blocks)):
             printd(f"{i} ", end="")
             if rotate:
-                node.x = blk(node.x[node.tree_idx_rot], node.pos[node.tree_idx_rot])[
+                node.x = blk(node.x[node.tree_idx_rot], node.pos[node.tree_idx_rot], num_batches)[
                     tree_idx_rot_inv
                 ]
             else:
-                node.x = blk(node.x, node.pos)
+                node.x = blk(node.x, node.pos, num_batches)
         return self.pool(node)
 
 
