@@ -450,69 +450,56 @@ class NSAMSA(nn.Module):
     def select_balls(
         self, q: torch.Tensor, k: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        queries = rearrange(q, "b n H m E -> b H (n m) E")
-        keys = reduce(k, "b n H m E -> b H E n", "mean")
+        queries = rearrange(q, "b H n m E -> b H (n m) E")
+        keys = reduce(k, "b H n m E -> b H E n", "mean")
         similarity = queries @ keys
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
-        return topk_values, topk_indices
+        return topk_indices
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
         x = x + self.pe_proj(self.compute_rel_pos(pos))
         qkv = self.qkv(x)
         q, k, v = repeat(
             qkv,
-            "(n m) (H E K) -> K b n H m E",
+            "(n m) (H E K) -> K b H n m E",
             b=1,
             H=self.num_heads,
             m=self.ball_size,
             K=3,
         )
         # tensor are of shape b h (n m) topk
-        num_points = q.shape[1] * q.shape[-1]
-        topk_values, topk_indices = self.select_balls(q, k)
+        num_points = q.shape[-2] * q.shape[-1]
+        topk_indices = self.select_balls(q, k)
 
-        print(topk_indices[0, 0, 0])
+        # print(topk_indices[0, 0, 0])
 
-        gates = straight_through(topk_values, 1.0) if self.use_diff_topk else None
+        # gates = straight_through(topk_values, 1.0) if self.use_diff_topk else None
         
         k = rearrange(k, "b n H m E -> b H n m E")
         v = rearrange(v, "b n H m E -> b H n m E")
+        
+        out = torch.zeros_like(v)
+        out = rearrange(out, "b H n m E -> b H nm E")
+        
+        for t in range(num_points):
+            idx = topk_indices[:, :, t, :].reshape(-1)
+            k_t = k[:, :, idx, :]
+            v_t = v[:, :, idx, :]
 
-        k = repeat(k, "b H n m E -> b H nm n m E", nm=num_points)
-        v = repeat(v, "b H n m E -> b H nm n m E", nm=num_points)
+        # k = repeat(k, "b H n m E -> b H nm n m E", nm=num_points)
+        # v = repeat(v, "b H n m E -> b H nm n m E", nm=num_points)
 
-        topk_indices = repeat(
-            topk_indices,
-            "b H nm topk -> b H nm topk m E",
-            m=self.ball_size,
-            E=v.shape[-1],
-        )
+        # topk_indices = repeat(
+        #     topk_indices,
+        #     "b H nm topk -> b H nm topk m E",
+        #     m=self.ball_size,
+        #     E=v.shape[-1],
+        # )
 
-        k = k.gather(3, topk_indices)
-        v = v.gather(3, topk_indices)
-
-        if self.use_diff_topk:
-            k = einx.multiply(
-                "b H nm topk, b H nm topk j E -> b H nm topk j E", gates, k
-            )
-
-        k = rearrange(k, "b H nm w j E -> b H nm (w j) E")
-        v = rearrange(v, "b H nm w j E -> b H nm (w j) E")
-
-        # attention
-        q = rearrange(q, "b n H m E -> b H n m E")
-        q = rearrange(q, "b H n m E -> b H (n m) E")
-        fsim = einsum(q, k, "b H nm E, b H nm sel E -> b H nm sel") * self.scale
-        mask_value = max_neg_value(fsim)
-        fsim = fsim.masked_fill(~fmask, mask_value)
-        fattn = fsim.softmax(dim=-1)
-        fattn = einsum(fattn, v, "b H nm sel, b H nm sel E -> b H nm E")
-
-        fattn = rearrange(fattn, "b H nm E -> nm b H E")
-        fattn = rearrange(fattn, "nm b H E -> (nm b) (H E)")
+        pass
 
         # TODO NEEDS POSITION BIAS MASK
-        return self.proj(fattn)
+        # return self.proj()
 
 
 class ErwinTransformerBlock(nn.Module):

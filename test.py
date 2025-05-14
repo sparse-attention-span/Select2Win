@@ -1,116 +1,103 @@
+import re
 import numpy as np
 import torch
-
-from datasets import ShapenetCarDataset
-from balltree import build_balltree
-
-
-# import torch
-# import matplotlib.pyplot as plt
-# from mpl_toolkits.mplot3d import Axes3D
-
-# points = torch.load("shapenet_car/mlcfd_data/processed/param1/1dc58be25e1b6e5675cad724c63e222e/mesh_points.th", weights_only=True)
-
-# # center and scale for display
-# # points = points - points.mean(0)
-# # points = points / points.norm(dim=1).max()
-
-# fig = plt.figure()
-# ax = fig.add_subplot(111, projection='3d')
-# ax.scatter(points[:, 0], points[:, 1], points[:, 2], s=1, alpha=0.8)
-# ax.view_init(elev=30, azim=120)
-# ax.set_axis_off()
-# plt.savefig("test.png")
-
-# exit()
+import torch.nn as nn
+from einops import einsum, rearrange, reduce, repeat
+from typing import Tuple
 
 
-# seed = 42
-# data_path = "./shapenet_car/mlcfd_data/processed"
-# knn = 8
-
-
-# train_dataset = ShapenetCarDataset(
-#     data_path=data_path,
-#     split="train",
-#     knn=8,
-# )
 # Create synthetic molecule-like 2D points
 def create_molecule_like_points(num_atoms=20, num_points_per_atom=400, seed=42):
     np.random.seed(seed)
 
     # Generate random atom centers
-    atom_centers = np.random.rand(num_atoms, 2) * 10  # Scale for better visualization
+    atom_centers = np.random.rand(num_atoms, 3) * 10  # Scale for better visualization
 
     # Create points around each atom (simulating electron density)
     all_points = []
     for center in atom_centers:
         # Generate points with Gaussian distribution around atom centers
-        points = np.random.normal(loc=center, scale=0.4, size=(num_points_per_atom, 2))
+        points = np.random.normal(loc=center, scale=0.4, size=(num_points_per_atom, 3))
         all_points.append(points)
 
     # Combine all points
     molecule_points = np.vstack(all_points)
 
-    # Create bonds between some atoms (lines of points)
-    for i in range(num_atoms-1):
-        if np.random.random() < 0.6:  # 60% chance of bond between consecutive atoms
-            start, end = atom_centers[i], atom_centers[i+1]
-            # Points along the bond
-            t = np.linspace(0, 1, 50).reshape(-1, 1)
-            bond_points = start * (1-t) + end * t
-            all_points.append(bond_points)
+    # # Create bonds between some atoms (lines of points)
+    # for i in range(num_atoms - 1):
+    #     if np.random.random() < 0.6:  # 60% chance of bond between consecutive atoms
+    #         start, end = atom_centers[i], atom_centers[i + 1]
+    #         # Points along the bond
+    #         t = np.linspace(0, 1, 50).reshape(-1, 1)
+    #         bond_points = start * (1 - t) + end * t
+    #         all_points.append(bond_points)
 
-    molecule_points = np.vstack(all_points)
+    # molecule_points = np.vstack(all_points)
 
     # Convert to 3D by setting z=0
-    molecule_3d = np.column_stack((molecule_points, np.zeros(len(molecule_points))))
+    # molecule_3d = np.column_stack((molecule_points, np.zeros(len(molecule_points))))
 
-    return torch.tensor(molecule_3d, dtype=torch.float)
+    return torch.tensor(molecule_points, dtype=torch.float)
+
 
 # Generate molecule-like points and replace the loaded points
-points = create_molecule_like_points(num_atoms=15, num_points_per_atom=500)
-
-# print(points)
-
-import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-
-
-fig, axes = plt.subplots(nrows=1, ncols=6)
-
-
-batch_idx = torch.repeat_interleave(torch.arange(1), points.shape[0])
-tree_idx, tree_mask = build_balltree(points, batch_idx) # build tree
-grouped_points = points[tree_idx] # sort points into the tree
-
-level_to_node_size = lambda level: 2**(level)
-
-fig = plt.figure(figsize=(18, 12))
-fig.suptitle("3D Point Cloud by Level", fontsize=20)
-
-nrows, ncols = 3, 4
-n_levels = 12
-
-assert n_levels <= nrows * ncols
-
-for level in range(n_levels):
-    groups = grouped_points.reshape(-1, level_to_node_size(level), 3) # (num balls, ball size, dim)
-    num_balls, ball_size, _ = groups.shape
+# Generate 20 batches of these points, with 4 heads each.
+points = torch.stack(
+    [
+        torch.stack(
+            [
+                create_molecule_like_points(
+                    num_atoms=15, num_points_per_atom=500, seed=s * t
+                )
+                for s in range(20)
+            ]
+        )
+        for t in range(4)
+    ]
+)
 
 
-    ax = fig.add_subplot(nrows, ncols, level + 1, projection='3d')
-    colors = plt.cm.viridis
+def select_balls(
+    q: torch.Tensor, k: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    queries = rearrange(q, "b H n m E -> b H (n m) E")
+    keys = reduce(k, "b H n m E -> b H E n", "mean")
+    similarity = queries @ keys
+    topk_values, topk_indices = torch.topk(similarity, 2, dim=-1)
+    return topk_indices
 
-    for i in range(num_balls):
-        points = groups[i]
-        ax.scatter(points[:, 0], points[:, 1], points[:, 2], color=colors(i), s=1)
+def forward(x: torch.Tensor):
+    layer = nn.Linear(3, 15)
+    layer.to("cuda")
+    x = layer(x)
+    q, k, v = rearrange(
+        x,
+        "H b (n m) (K E) -> K b H n m E",
+        b=20,
+        H=4,
+        m=500,
+        K=3,
+    )
+    # tensor are of shape b h (n m) topk
+    num_points = q.shape[-2] * q.shape[-1]
+    topk_indices = select_balls(q, k)
+    num_balls = topk_indices.shape[-1]
 
-    ax.set_title(f'Level {level} (Ball Size: {ball_size})')
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
+    # print(topk_indices[0, 0, 0])
 
-plt.tight_layout(rect=[0, 0, 1, 0.95])
-plt.savefig("test.png")
+    # gates = straight_through(topk_values, 1.0) if self.use_diff_topk else None
+
+    out = torch.zeros_like(v)
+    out = rearrange(out, "b H n m E -> b H (n m) E")
+
+    print(f"K:{k.shape}")
+    print(f"V:{v.shape}")
+    print(f"topk:{topk_indices.shape}")
+    print(f"Q:{q.shape}")
+    print(f"out:{out.shape}")
+    for t in range(num_points):
+        for b in num_balls:
+            ball = k[]
+
+points = points.to("cuda")
+forward(points)
