@@ -7,6 +7,10 @@ experiments/wandb/
 shapenet_car/
 experiments/log_dir
 
+slurm
+
+slurm/
+
 # will be way too big
 experiments/log_dir
 
