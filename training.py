@@ -281,7 +281,7 @@ def fit(
             print("Calculating runtime stats.....")
             print(
                 prof.key_averages().table(
-                    sort_by="self_cuda_memory_usage", row_limit=10
+                    sort_by="s            else train_loaderelf_cuda_memory_usage", row_limit=10
                 )
             )
 

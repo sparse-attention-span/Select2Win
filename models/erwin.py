@@ -409,7 +409,6 @@ class NSAMSA(nn.Module):
         dimensionality: int = 3,
         topk: int = 2,
         use_diff_topk: bool = True,
-        num_batches = 1,
     ):
         super().__init__()
         self.dim = dim
@@ -418,7 +417,6 @@ class NSAMSA(nn.Module):
         self.topk = topk
         self.scale = dim**-0.5
         self.use_diff_topk = use_diff_topk
-        self.num_batches = num_batches
 
         self.qkv = nn.Linear(dim, 3 * dim)
         self.proj = nn.Linear(dim, dim)
@@ -458,13 +456,13 @@ class NSAMSA(nn.Module):
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_indices
 
-    def forward(self, x: torch.Tensor, pos: torch.Tensor):
+    def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
         x = x + self.pe_proj(self.compute_rel_pos(pos))
         qkv = self.qkv(x)
         q, k, v = repeat(
             qkv,
             "(b n m) (H E K) -> K b H n m E",
-            b=self.num_batches,
+            b=num_batches,
             H=self.num_heads,
             m=self.ball_size,
             K=3,
@@ -480,28 +478,39 @@ class NSAMSA(nn.Module):
         k = rearrange(k, "b n H m E -> b H n m E")
         v = rearrange(v, "b n H m E -> b H n m E")
         
-        out = torch.zeros_like(v)
+        # # out = torch.zeros_like(v)
         # out = rearrange(out, "b H n m E -> b H nm E")
         
-        for t in range(num_points):
-            idx = topk_indices[:, :, t, :].reshape(-1)
-            k_t = k[:, :, idx, :]
-            v_t = v[:, :, idx, :]
+        # for t in range(num_points):
+        #     idx = topk_indices[:, :, t, :].reshape(-1)
+        #     k_t = k[:, :, idx, :]
+        #     v_t = v[:, :, idx, :]
 
-        # k = repeat(k, "b H n m E -> b H nm n m E", nm=num_points)
-        # v = repeat(v, "b H n m E -> b H nm n m E", nm=num_points)
+        k = repeat(k, "b H n m E -> b H nm n m E", nm=num_points)
+        v = repeat(v, "b H n m E -> b H nm n m E", nm=num_points)
 
-        # topk_indices = repeat(
-        #     topk_indices,
-        #     "b H nm topk -> b H nm topk m E",
-        #     m=self.ball_size,
-        #     E=v.shape[-1],
-        # )
+        topk_indices = repeat(
+            topk_indices,
+            "b H nm topk -> b H nm topk m E",
+            m=self.ball_size,
+            E=v.shape[-1],
+        )
 
-        pass
+        desired_values = torch.gather(v, dim=2, index=topk_indices)
+        desired_keys = torch.gather(k, dim=2, index=topk_indices)
 
+        # Rearrange topk
+        desired_keys = rearrange(desired_keys, "... n m E -> ... (n m) E")
+        desired_values = rearrange(desired_values, "... n m E -> ... (n m) E")
+        
+        q = rearrange(q, "b H n m E -> b H (n m) E")
+        
+        attn = torch.softmax(einsum(q, desired_keys, "b H nm E, b H nm km E -> b H nm km") / (q.shape[-1] ** 0.5), dim=-1)
+        out = einsum(attn, desired_values, "b H nm km, b H nm km E -> b H nm E")
+        out = rearrange(out, "b H nm E -> (b nm) (H E)")
+        # Rearrange k into (n m)
         # TODO NEEDS POSITION BIAS MASK
-        # return self.proj()
+        return self.proj(out)
 
 
 class ErwinTransformerBlock(nn.Module):
@@ -514,7 +523,6 @@ class ErwinTransformerBlock(nn.Module):
         msa_type: str,
         dimensionality: int = 3,
         attn_kwargs: dict = {},
-        num_batches: int = 1,
     ):
         super().__init__()
         self.ball_size = ball_size
@@ -527,15 +535,13 @@ class ErwinTransformerBlock(nn.Module):
             "LucidRains": LucidRains,
         }[msa_type]
 
-        if msa_type == "NSAMSA":
-            attn_kwargs["num_batches"] = num_batches
         self.BMSA = MSABase(
             dim, num_heads, ball_size, dimensionality=dimensionality, **attn_kwargs
         )
         self.swiglu = SwiGLU(dim, dim * mlp_ratio)
 
-    def forward(self, x: torch.Tensor, pos: torch.Tensor):
-        x = x + self.BMSA(self.norm1(x), pos)
+    def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
+        x = x + self.BMSA(self.norm1(x), pos, num_batches)
         return x + self.swiglu(self.norm2(x))
 
 
