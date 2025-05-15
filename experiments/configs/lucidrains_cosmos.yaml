@@ -1,24 +1,27 @@
 c_in: 32
 c_hidden: 32
 ball_sizes: [256, 256, 256, 256]
-# enc_num_heads: [2, 2, 2]
-# enc_depths: [2, 2, 2]
-# dec_num_heads: [2,2]
-# dec_depths: [2, 2]
-# strides: [1,1]
-enc_num_heads: [2, 2, 2, 2]
+enc_num_heads: [2,4,8,16]
 enc_depths: [2, 2, 6, 2]
-dec_num_heads: [2, 2, 2]
+dec_num_heads: [2, 4, 8]
 dec_depths: [2, 2, 2]
 strides: [2, 2, 2]
-rotate: 45
+# ball_sizes: [256, 256, 256, 256]
+# enc_num_heads: [2,4,8,16]
+# enc_depths: [2, 2, 6, 2]
+# dec_num_heads: [2, 4, 8]
+# dec_depths: [2, 2, 2]
+# strides: [2,2,2]
+rotate: 0
 mp_steps: 3
+# msa_type: "BallMSA"
 msa_type: "LucidRains"
 attn_kwargs:
+    selection_ball_size: 64
     per_ball: false
     use_flex_attn: false
     use_triton_impl: true
-    use_miniballattn: true
+    use_miniballattn: false
     kv_head_factor: 1
     topk: 8
     dim_head_factor: 1

@@ -41,6 +41,8 @@ try:
 except ImportError:
     pass
 
+from native_sparse_attention_pytorch.triton_native_sparse_attention import native_sparse_attend
+
 # flex attn sliding attention mask
 
 
@@ -1163,9 +1165,7 @@ class SparseAttentionMinimal_buggy(Module):
         self,
         inp,
     ):
-        assert inp.shape[1] % self.selection_block_size == 0
-        # lazy import i guess...
-        from native_sparse_attention_pytorch.triton_native_sparse_attention import native_sparse_attend
+
 
         # queries, keys, values
         q, k, v = self.to_qkv(inp).split(self.qkv_split, dim = -1)

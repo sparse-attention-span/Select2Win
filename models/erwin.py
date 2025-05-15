@@ -438,6 +438,7 @@ class LucidRainsMinimal(nn.Module):
         ball_size: int,
         dimensionality: int,
         bs: int,
+        selection_ball_size: int,
         per_ball: bool = False,
         use_flex_attn: bool = False,
         use_triton_impl: bool = True,
@@ -451,7 +452,7 @@ class LucidRainsMinimal(nn.Module):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
-        self.ball_size = ball_size
+        self.ball_size = selection_ball_size
         self.per_ball = per_ball
         self.use_flex_attn = use_flex_attn
         self.use_triton_impl = use_triton_impl
@@ -464,10 +465,10 @@ class LucidRainsMinimal(nn.Module):
             assert not use_triton_impl
 
         if not per_ball:
-            SLIDING_WINDOW_SIZE = ball_size
-            COMPRESS_BLOCK_SIZE = ball_size
-            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//compress_stride_fraction
-            FINE_BLOCK_SIZE = ball_size
+            SLIDING_WINDOW_SIZE = self.ball_size
+            COMPRESS_BLOCK_SIZE = self.ball_size
+            COMPRESS_BLOCK_SLIDING_STRIDE = self.ball_size//compress_stride_fraction
+            FINE_BLOCK_SIZE = self.ball_size
         else:
             print("WARNING: per_ball uses hardcoded values!")
             SLIDING_WINDOW_SIZE = ball_size//8
@@ -481,7 +482,7 @@ class LucidRainsMinimal(nn.Module):
             SLIDING_WINDOW_SIZE = None # fixes bug where NSA defaults to sliding window
             sliding_window_attn = None
 
-        print(f"Ball size: {ball_size}")
+        print(f"Ball size: {ball_size}, selection ball size: {self.ball_size}")
 
         # basic dim checks
         assert dim % num_heads == 0
@@ -531,11 +532,11 @@ class LucidRainsMinimal(nn.Module):
         assert not torch.isinf(pos).any(), "Inf in pos!"
         # print(f"x has shape: {x.shape}")
         x = x + self.pe_proj(self.compute_rel_pos(pos))
-        x = rearrange(x, "(bs num_pts) E -> bs num_pts E", bs=self.bs)
-        # if self.per_ball:
-        #     x = rearrange(x, "(n m) E -> n m E", m=self.ball_size)
-        # else:
-        #     x = x.unsqueeze(0)
+
+        if self.per_ball:
+            x = rearrange(x, "(n m) E -> n m E", m=self.ball_size)
+        else:
+            x = rearrange(x, "(bs num_pts) E -> bs num_pts E", bs=self.bs)
         # if not self.B:
         #     self.B = x.shape[1]
         #     printd("seq_len is", self.B)
@@ -772,7 +773,7 @@ class ErwinTransformerBlock(nn.Module):
         self.ball_size = ball_size
         self.norm1 = nn.RMSNorm(dim)
         self.norm2 = nn.RMSNorm(dim)
-        self.dropout = nn.Dropout(p=0.1)
+        # self.dropout = nn.Dropout(p=0.1)
 
         MSABase = {
             "BallMSA": BallMSA,
@@ -786,7 +787,7 @@ class ErwinTransformerBlock(nn.Module):
         self.swiglu = SwiGLU(dim, dim * mlp_ratio)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
-        x = x + self.BMSA(self.norm1(self.dropout(x)), pos)
+        x = x + self.BMSA(self.norm1(x), pos)
         return x + self.swiglu(self.norm2(x))
 
 

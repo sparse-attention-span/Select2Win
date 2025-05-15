@@ -14,7 +14,7 @@ from contextlib import ExitStack
 import pandas as pd
 
 
-def setup_wandb_logging(model, config, project_name="ballformer_fixed_new_cosmo_test"):
+def setup_wandb_logging(model, config, project_name="erwin-more-data"):
     wandb.init(
         project=project_name,
         config=config,
@@ -92,6 +92,9 @@ def train_step(model, batch, optimizer, scheduler):
     optimizer.zero_grad()
     stat_dict = model.training_step(batch)
     stat_dict["train/loss"].backward()
+
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
     optimizer.step()
     if scheduler is not None:
         scheduler.step()

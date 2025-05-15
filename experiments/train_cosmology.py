@@ -50,9 +50,9 @@ erwin_configs = {
     "small": {
         "c_in": 32,
         "c_hidden": 32,
-        "enc_num_heads": [8, 4, 8, 16],
+        "enc_num_heads": [2, 4, 8, 16],
         "enc_depths": [2, 2, 6, 2],
-        "dec_num_heads": [8, 4, 8],
+        "dec_num_heads": [2, 4, 8],
         "dec_depths": [2, 2, 2],
         "strides": [2, 2, 2],
         "rotate": 45,
