@@ -1,0 +1,57 @@
+2025-04-27 15:50:03.548264: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2025-04-27 15:50:03.663629: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:467] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1745761803.706594 3986664 cuda_dnn.cc:8579] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1745761803.717511 3986664 cuda_blas.cc:1407] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+W0000 00:00:1745761803.787723 3986664 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1745761803.787776 3986664 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1745761803.787783 3986664 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1745761803.787788 3986664 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+2025-04-27 15:50:03.795541: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F AVX512_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: Currently logged in as: fragmential (fragmential-university-of-amsterdam) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.9
+wandb: Run data is saved locally in /gpfs/home5/scur2588/team_git/erwin/experiments/wandb/run-20250427_155009-3ks30p10
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run erwin_shapenet
+wandb: ⭐️ View project at https://wandb.ai/fragmential-university-of-amsterdam/ballformer
+wandb: 🚀 View run at https://wandb.ai/fragmential-university-of-amsterdam/ballformer/runs/3ks30p10
+using LucidRains
+USE_FLEX_ATTN: False
+PER_BALL: True
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg       CPU Mem  Self CPU Mem      CUDA Mem  Self CUDA Mem    # of Calls  Total GFLOPs  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                            aten::empty         1.18%     140.570ms         1.20%     142.636ms       6.568us       0.000us         0.00%       0.000us       0.000us       6.11 Kb       6.11 Kb     268.33 Gb     268.33 Gb         21717            --  
+                                              aten::bmm         1.22%     146.054ms         1.70%     202.632ms      46.636us     314.705ms        12.95%     314.705ms      72.429us           0 b           0 b      51.15 Gb      51.15 Gb          4345      1989.720  
+                                           aten::gather         0.09%      10.439ms         0.17%      19.807ms      50.786us      72.010ms         2.96%      72.010ms     184.640us           0 b           0 b      48.62 Gb      48.62 Gb           390            --  
+                                              aten::cat         0.68%      81.531ms         1.11%     132.361ms      35.629us      62.741ms         2.58%      62.741ms      16.888us           0 b           0 b      28.64 Gb      28.64 Gb          3715            --  
+                                              aten::mul         1.09%     130.527ms         1.63%     194.218ms      21.108us      50.426ms         2.08%      50.426ms       5.481us         264 b         264 b      26.82 Gb      26.82 Gb          9201         7.150  
+                                            aten::index         0.65%      77.264ms         1.46%     174.546ms      63.936us      43.261ms         1.78%      47.828ms      17.519us           0 b           0 b      17.43 Gb      17.41 Gb          2730            --  
+                                               aten::mm         1.65%     197.153ms         2.24%     267.462ms      70.664us      77.914ms         3.21%      77.914ms      20.585us           0 b           0 b      15.04 Gb      15.04 Gb          3785      1050.047  
+                                            aten::addmm         1.04%     123.698ms         1.27%     151.562ms      55.517us      65.367ms         2.69%      65.367ms      23.944us           0 b           0 b      13.80 Gb      13.80 Gb          2730       815.111  
+                                              aten::add         0.39%      46.688ms         0.57%      67.558ms      21.522us      18.919ms         0.78%      18.919ms       6.027us          16 b           0 b       8.94 Gb       8.94 Gb          3139         2.374  
+                                             aten::gelu         0.11%      13.397ms         0.22%      25.937ms      33.253us       9.322ms         0.38%       9.322ms      11.951us           0 b           0 b       8.37 Gb       8.37 Gb           780            --  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+Self CPU time total: 11.927s
+Self CUDA time total: 2.430s
+
+[1;34mwandb[0m: 
+[1;34mwandb[0m: 🚀 View run [33merwin_shapenet[0m at: [34mhttps://wandb.ai/fragmential-university-of-amsterdam/ballformer/runs/3ks30p10[0m
+[1;34mwandb[0m: Find logs at: [1;35mwandb/run-20250427_155009-3ks30p10/logs[0m
+
+JOB STATISTICS
+==============
+Job ID: 11410216
+Cluster: snellius
+User/Group: scur2588/scur2588
+State: RUNNING
+Nodes: 1
+Cores per node: 18
+CPU Utilized: 00:00:00
+CPU Efficiency: 0.00% of 01:03:54 core-walltime
+Job Wall-clock time: 00:03:33
+Memory Utilized: 0.00 MB
+Memory Efficiency: 0.00% of 120.00 GB (120.00 GB/node)
+WARNING: Efficiency statistics can only be obtained after the job has ended as seff tool is based on the accounting database data.

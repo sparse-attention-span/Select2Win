@@ -3,7 +3,7 @@
 # make sure uv is installed, if not:
 # curl -LsSf https://astral.sh/uv/install.sh | sh
 
-uv venv erwin
+uv venv erwin --python 3.10
 source erwin/bin/activate
 
 MINIMAL=false
@@ -33,7 +33,7 @@ if [ "$MINIMAL" = true ]; then
     uv pip install numpy
     uv pip install einops
     uv pip install Cython
-    uv pip install setuptools
+    uv pip install setuptools==79.0.1
 else
     echo "Installing all dependencies [Erwin + baselines + experiments]"
 
@@ -53,7 +53,7 @@ else
     uv pip install numpy
     uv pip install einops
     uv pip install Cython
-    uv pip install setuptools
+    uv pip install setuptools==79.0.1
 
     # PointTransformer v3 dependencies
     uv pip install addict

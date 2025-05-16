@@ -1,0 +1,15 @@
+#!/bin/bash
+#SBATCH --partition=gpu_a100
+#SBATCH --gpus=1
+#SBATCH --job-name=sperwin_mem_test
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=18
+#SBATCH --time=00:30:00
+#SBATCH --output=slurm/slurm_output_%A.out
+
+source erwin/bin/activate
+
+# export TORCH_LOGS="+dynamo"
+# export TORCHDYNAMO_VERBOSE=1
+
+uv run tests/test_sparse_ball_attention.py

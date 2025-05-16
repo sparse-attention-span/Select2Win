@@ -1,6 +1,7 @@
 import sys
 
 sys.path.append("../../")
+sys.path.append("../")
 
 import argparse
 import torch
@@ -33,12 +34,10 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--use-wandb", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument(
-        "--val-every-iter", type=int, default=100, help="Validation frequency"
-    )
-    parser.add_argument(
-        "--experiment", type=str, default="shapenet", help="Experiment name in wandb"
-    )
+    parser.add_argument("--val-every-iter", type=int, default=100,
+                        help="Validation frequency")
+    parser.add_argument("--experiment", type=str, default="shapenet",
+                        help="Experiment name in wandb")
     parser.add_argument("--test", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--knn", type=int, default=8)
@@ -47,28 +46,48 @@ def parse_args():
         action="store_true",
         help="Use minimal profile configuration for testing",
     )
+    parser.add_argument("--msa-type", type=str, default="BallMSA",
+                        choices=["BallMSA", "NSAMSA", "LucidRains"])
+
+    parser.add_argument("--lucidrains-per-ball", action='store_true')
+    parser.add_argument("--lucidrains-gqa", action='store_true')
+    parser.add_argument("--lucidrains-triton-kernel", action='store_true')
+    parser.add_argument("--lucidrains-flex-attn", action='store_true')
+
+    parser.add_argument("--nsamsa-use-diff-topk", action='store_true')
 
     return parser.parse_args()
 
+def get_attn_kwargs(args):
+    if args.msa_type == "LucidRains":
+        kwargs =  {
+            "per_ball": args.lucidrains_per_ball,
+            "use_flex_attn": args.lucidrains_flex_attn,
+            "use_triton_impl": args.lucidrains_triton_kernel,
+            "use_gqa": args.lucidrains_gqa,
+        }
+    elif args.msa_type == "NSAMSA":
+        kwargs = {
+            "use_diff_topk": args.nsamsa_use_diff_topk
+        }
+    else:
+        kwargs = {}
+
+    return kwargs
 
 erwin_configs = {
     "profile": {
         "c_in": 64,
         "c_hidden": 64,
-        "ball_sizes": [
-            256,
-        ],
-        "enc_num_heads": [
-            8,
-        ],
-        "enc_depths": [
-            1,
-        ],
+        "ball_sizes": [256,],
+        "enc_num_heads": [8,],
+        "enc_depths": [1,],
         "dec_num_heads": [],
         "dec_depths": [],
         "strides": [],
         "rotate": 0,
         "mp_steps": 3,
+        "msa_type": ""
     },
     "small": {
         "c_in": 64,
@@ -81,6 +100,7 @@ erwin_configs = {
         "strides": [1],
         "rotate": 45,
         "mp_steps": 3,
+        "msa_type": ""
     },
     "medium": {
         "c_in": 64,
@@ -93,6 +113,7 @@ erwin_configs = {
         "strides": [1],
         "rotate": 45,
         "mp_steps": 3,
+        "msa_type": ""
     },
     "large": {
         "c_in": 64,
@@ -105,6 +126,7 @@ erwin_configs = {
         "strides": [1],
         "rotate": 45,
         "mp_steps": 3,
+        "msa_type": ""
     },
 }
 
@@ -163,12 +185,12 @@ if __name__ == "__main__":
 
     if args.model == "erwin":
         model_config = erwin_configs[args.size]
-        if args.profile:
-            model_config = erwin_configs["profile"]
     else:
         raise NotImplementedError(f"Unknown model: {args.model}")
 
-    main_model = model_cls[args.model](**model_config)
+    model_config["msa_type"] = args.msa_type
+
+    main_model = model_cls[args.model](**model_config, attn_kwargs=get_attn_kwargs(args))
     model = ShapenetCarModel(main_model).cuda()
     model = torch.compile(model)
 
