@@ -578,6 +578,16 @@ class BasicLayer(nn.Module):
                 for _ in range(depth)
             ]
         )
+        self.nsa_block = ErwinTransformerBlock(
+                dim,
+                num_heads,
+                16,
+                mlp_ratio,
+                "NSAMSA",
+                dimensionality,
+                attn_kwargs,
+            )
+                
         self.rotate = [i % 2 for i in range(depth)] if rotate else [False] * depth
 
         self.pool = lambda node: node
@@ -613,6 +623,8 @@ class BasicLayer(nn.Module):
                 ]
             else:
                 node.x = blk(node.x, node.pos, num_batches)
+                
+        node.x = self.nsa_block(node.x, node.pos, num_batches)
         return self.pool(node)
 
 
