@@ -185,7 +185,7 @@ python train_md.py --use-wandb 1 --size medium --model erwin --data-path "path/t
 In case you have any ideas for future work based on Erwin or if you see possible efficiency improvements, please let me know. I would be happy to discuss them :)
 
 ## BibTeX
-```
+```bibtex
 @misc{zhdanov2025erwintreebasedhierarchicaltransformer,
       title={Erwin: A Tree-based Hierarchical Transformer for Large-scale Physical Systems}, 
       author={Maksim Zhdanov and Max Welling and Jan-Willem van de Meent},

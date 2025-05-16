@@ -1,9 +1,12 @@
 import sys
+
 sys.path.append("../../")
+sys.path.append("../")
 
 import argparse
 import yaml
 import torch
+
 torch.set_float32_matmul_precision("high")
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
@@ -17,11 +20,14 @@ import time
 import gc
 
 
-
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="erwin",
-                        choices=('mpnn', 'pointtransformer', 'pointnetpp', 'erwin'))
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="erwin",
+        choices=("mpnn", "pointtransformer", "pointnetpp", "erwin"),
+    )
     parser.add_argument("--data-path", type=str, default="../shapenet_car/preprocessed")
     parser.add_argument("--config", type=str, default="")
     parser.add_argument("--size", type=str, default="small",
@@ -37,7 +43,11 @@ def parse_args():
     parser.add_argument("--test", action="store_true", default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--knn", type=int, default=8)
-    parser.add_argument("--profile", action="store_true", help="Use minimal profile configuration for testing")
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Use minimal profile configuration for testing",
+    )
     parser.add_argument("--msa-type", type=str, default="BallMSA",
                         choices=["BallMSA", "NSAMSA", "LucidRains"])
     parser.add_argument("--erwintype", type=str, default="normal",
@@ -97,6 +107,7 @@ erwin_configs = {
         "strides": [],
         "rotate": 0,
         "mp_steps": 3,
+        "msa_type": ""
     },
     "small": {
         "c_in": 64,
@@ -109,6 +120,7 @@ erwin_configs = {
         "strides": [1],
         "rotate": 45,
         "mp_steps": 3,
+        "msa_type": ""
     },
     "medium": {
         "c_in": 64,
@@ -121,6 +133,7 @@ erwin_configs = {
         "strides": [1],
         "rotate": 45,
         "mp_steps": 3,
+        "msa_type": ""
     },
     "large": {
         "c_in": 64,
@@ -133,6 +146,7 @@ erwin_configs = {
         "strides": [1],
         "rotate": 45,
         "mp_steps": 3,
+        "msa_type": ""
     },
 }
 
@@ -225,5 +239,14 @@ if __name__ == "__main__":
 
     torch.autograd.set_detect_anomaly(True)
     # Run the training
-    # fit(config, model, optimizer, scheduler, train_loader, val_loader, test_loader=None, timing_window_start=100, timing_window_size=500):
-    fit(config, model, optimizer, scheduler, train_loader, valid_loader, test_loader=test_loader)
+    fit(
+        config,
+        model,
+        optimizer,
+        scheduler,
+        train_loader,
+        valid_loader,
+        test_loader,
+        num_epochs,
+        args.val_every_iter,
+    )

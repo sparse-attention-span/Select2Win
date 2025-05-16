@@ -11,4 +11,6 @@ source erwin/bin/activate
 
 cd experiments
 
-uv run train_shapenet.py --profile --num-epochs 100 --data-path "$HOME/data/mlcfd_data/preprocessed" --use-wandb 0 --msa-type LucidRains
+uv run train_shapenet.py --profile --num-epochs 100 --data-path "$HOME/data/mlcfd_data/preprocessed" --use-wandb 0 --msa-type LucidRains \
+    --lucidrains-triton-kernel \
+    --lucidrains-gqa
