@@ -5,4 +5,5 @@ uv run train_shapenet.py \
     --data-path "$HOME/erwin/shapenet_car/preprocessed" \
     --use-wandb 1 \
     --batch-size 2 \
-    --msa-type BallMSA
+    --msa-type BallMSA \
+    --experiments NSALastPytorch

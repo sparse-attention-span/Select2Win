@@ -17,7 +17,7 @@ from torch.profiler import profile, record_function, ProfilerActivity, tensorboa
 from contextlib import ExitStack
 import pandas as pd
 
-def setup_wandb_logging(model, config, project_name="ballformer"):
+def setup_wandb_logging(model, config, project_name="erwin-more-data"):
     wandb.init(
         project=project_name,
         config=config,
