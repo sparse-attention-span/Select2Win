@@ -859,6 +859,79 @@ class BasicLayer(nn.Module):
         return self.pool(node)
 
 
+
+class BasicLayerNSA(nn.Module):
+    def __init__(
+        self,
+        direction: Literal[
+            "down", "up", None
+        ],  # down: encoder, up: decoder, None: bottleneck
+        depth: int,
+        stride: int,
+        dim: int,
+        num_heads: int,
+        ball_size: int,
+        mlp_ratio: int,
+        rotate: bool,
+        dimensionality: int = 3,
+        msa_type: str = "BallMSA",
+        attn_kwargs: dict = {},
+    ):
+        super().__init__()
+
+        self.blocks = nn.ModuleList(
+            [
+                ErwinTransformerBlock(
+                    dim,
+                    num_heads,
+                    ball_size,
+                    mlp_ratio,
+                    dimensionality,
+                    "BallMSA",
+                    attn_kwargs,
+                )
+                for _ in range(depth)
+            ]
+        )
+        self.rotate_block = nn.ModuleList(
+            [
+                ErwinTransformerBlock(
+                    dim,
+                    num_heads,
+                    ball_size,
+                    mlp_ratio,
+                    dimensionality,
+                    msa_type,
+                    attn_kwargs,
+                )
+                for _ in range(depth)
+            ]
+        )
+        self.rotate = [i % 2 for i in range(depth)] if rotate else [False] * depth
+
+        self.pool = lambda node: node
+        self.unpool = lambda node: node
+
+        if direction == "down" and stride is not None:
+            self.pool = BallPooling(dim, stride, dimensionality)
+        elif direction == "up" and stride is not None:
+            self.unpool = BallUnpooling(dim, stride, dimensionality)
+
+    def forward(self, node: Node) -> Node:
+        printd("Erwin transformer blocks:")
+        node = self.unpool(node)
+
+        for i, (rotate, blk) in enumerate(zip(self.rotate, self.blocks)):
+            printd(f"{i} ", end='')
+            if rotate:
+                node.x = self.rotate_block[i](node.x, node.pos)
+            else:
+                node.x = blk(node.x, node.pos)
+        
+        return self.pool(node)
+
+
+
 class ErwinTransformer(nn.Module):
     """
     Erwin Transformer.
