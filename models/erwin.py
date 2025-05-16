@@ -265,7 +265,7 @@ class BallMSA(nn.Module):
         pos = pos.view(num_balls, self.ball_size, dim)
         return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
 
-    def forward(self, x: torch.Tensor, pos: torch.Tensor):
+    def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
         x = x + self.pe_proj(self.compute_rel_pos(pos))
         q, k, v = rearrange(
             self.qkv(x),
