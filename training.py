@@ -189,17 +189,6 @@ def fit(
     timing_window_start=100,
     timing_window_size=500,
 ):
-def fit(
-    config,
-    model,
-    optimizer,
-    scheduler,
-    train_loader,
-    val_loader,
-    test_loader=None,
-    timing_window_start=100,
-    timing_window_size=500,
-):
     if config.get("use_wandb", False):
         setup_wandb_logging(model, config)
 

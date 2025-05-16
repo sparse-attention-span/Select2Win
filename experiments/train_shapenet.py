@@ -52,8 +52,8 @@ def parse_args():
                         choices=["BallMSA", "NSAMSA", "LucidRains"])
     parser.add_argument("--nsa-type", type=str, default="",
                         choices=["", "BallMSA", "NSAMSA", "LucidRains"])
-    parser.add_argument("--erwintype", type=str, default="normal",
-                        choices=["normal", "replacerotate"])
+    # parser.add_argument("--erwintype", type=str, default="normal",
+    #                     choices=["normal", "replacerotate"])
 
 
 
@@ -215,11 +215,11 @@ if __name__ == "__main__":
     if args.model == "erwin":
         if args.config:
             with open(f"{args.config}", "r") as f:
-                model_config = dict(yaml.safe_load(f)) | {"erwintype": args.erwintype}
+                model_config = dict(yaml.safe_load(f)) #| {"erwintype": args.erwintype}
                 model_config["attn_kwargs"]["bs"] = args.batch_size
                 print(model_config)
         else:
-            model_config = erwin_configs[args.size] | {"msa_type": args.msa_type} | {"nsa_type": args.nsa_type} | {"erwintype": args.erwintype}
+            model_config = erwin_configs[args.size] | {"msa_type": args.msa_type} | {"nsa_type": args.nsa_type} #| {"erwintype": args.erwintype}
         # if args.profile:
         #     model_config = erwin_configs["profile"]
     else:

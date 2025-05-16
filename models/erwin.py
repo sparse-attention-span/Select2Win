@@ -774,8 +774,8 @@ class ErwinTransformerBlock(nn.Module):
         num_heads: int,
         ball_size: int,
         mlp_ratio: int,
-        dimensionality: int = 3,
         msa_type: str = "BallMSA",
+        dimensionality: int = 3,
         attn_kwargs: dict = {},
     ):
         super().__init__()
@@ -813,8 +813,8 @@ class BasicLayer(nn.Module):
         ball_size: int,
         mlp_ratio: int,
         rotate: bool,
-        dimensionality: int = 3,
         msa_type: str = "BallMSA",
+        dimensionality: int = 3,
         nsa_type: str | None = None,
         attn_kwargs: dict = {},
     ):
@@ -905,8 +905,8 @@ class BasicLayerNSA(nn.Module):
         ball_size: int,
         mlp_ratio: int,
         rotate: bool,
-        dimensionality: int = 3,
         msa_type: str = "BallMSA",
+        dimensionality: int = 3,
         attn_kwargs: dict = {},
     ):
         super().__init__()
