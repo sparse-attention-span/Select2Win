@@ -423,6 +423,7 @@ class NSAMSA(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.pe_proj = nn.Linear(dimensionality, dim)
 
+        self.selection_proj = nn.Linear(ball_size * dim // num_heads, dim // num_heads)
         from einops.layers.torch import Rearrange
 
         # self.qkv = nn.Identity()
@@ -448,11 +449,21 @@ class NSAMSA(nn.Module):
         # return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
 
     @torch.no_grad()
-    def select_balls(
+    def select_balls_mean(
         self, q: torch.Tensor, k: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         queries = rearrange(q, "b H n m E -> b H (n m) E")
         keys = reduce(k, "b H n m E -> b H E n", "mean")
+        similarity = queries @ keys
+        topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
+        return topk_indices
+    
+    def select_balls_mlp(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
+        queries = rearrange(q, "b H n m E -> b H (n m) E")
+        keys = self.selection_proj(
+            rearrange(k, "b H n m E -> b H n (m E)")
+        ).squeeze(-1)
+        keys = rearrange(keys, "b H km E -> b H E km")
         similarity = queries @ keys
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_indices
@@ -470,7 +481,7 @@ class NSAMSA(nn.Module):
         )
         # tensor are of shape b h (n m) topk
         num_points = q.shape[-3] * q.shape[-2]
-        topk_indices = self.select_balls(q, k)
+        topk_indices = self.select_balls_mlp(q, k)
 
         k = repeat(k, "b H n m E -> b H nm n m E", nm=num_points)
         v = repeat(v, "b H n m E -> b H nm n m E", nm=num_points)
