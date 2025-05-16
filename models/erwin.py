@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Tuple
 
 import math
@@ -471,33 +472,6 @@ class NSAMSA(nn.Module):
         num_points = q.shape[-3] * q.shape[-2]
         topk_indices = self.select_balls(q, k)
 
-        # q = rearrange(q, "b H n m E -> b H (n m) E")
-        # out = torch.zeros_like(v)
-        # out = rearrange(out, "b H n m E -> b H (n m) E")
-
-        # E = v.shape[-1]
-        # M = v.shape[-2]
-
-        # for b in range(num_batches):
-        #     for h in range(self.num_heads):
-        #         for t in range(num_points):
-        #             # topk_indices[b,h,t] is a 1D tensor of length topk
-        #             idx = topk_indices[b, h, t]               # -> [topk]
-        #             # select the keys and values for this (batch, head, position)
-        #             k_t = k[b, h, idx, :, :]                  # -> [topk, M, E]
-        #             v_t = v[b, h, idx, :, :]                  # -> [topk, M, E]
-        #             # flatten the topk blocks
-        #             k_t = rearrange(k_t, "topk M E -> (topk M) E")                  # -> [topk * M, E]
-        #             v_t = rearrange(v_t, "topk M E -> (topk M) E")                  # -> [topk * M, E]
-        #             # fetch the query vector
-        #             q_t = q[b, h, t].unsqueeze(0)             # -> [1, E]
-        #             # compute attention weights
-        #             attn = torch.softmax((q_t @ k_t.t()) * (E ** -0.5), dim=-1)  # -> [1, topk*M]
-        #             # compute output
-        #             out_val = attn @ v_t                      # -> [1, E]
-        #             # place back into out; expand to (M, E) if needed or squeeze
-        #             out[b, h, t] = out_val.squeeze(0)          # -> [1, E] -> [E]
-
         k = repeat(k, "b H n m E -> b H nm n m E", nm=num_points)
         v = repeat(v, "b H n m E -> b H nm n m E", nm=num_points)
 
@@ -515,13 +489,12 @@ class NSAMSA(nn.Module):
         desired_keys = rearrange(desired_keys, "... n m E -> ... (n m) E")
         desired_values = rearrange(desired_values, "... n m E -> ... (n m) E")
         
-        q = rearrange(q, "b H n m E -> b H (n m) E")
+        q = repeat(q, "b H n m E -> b H (n m) km E", km=1)
         
-        attn = torch.softmax(einsum(q, desired_keys, "b H nm E, b H nm km E -> b H nm km") / (q.shape[-1] ** 0.5), dim=-1)
-        out = einsum(attn, desired_values, "b H nm km, b H nm km E -> b H nm E")
-        out = rearrange(out, "b H nm E -> (b nm) (H E)")
-        # Rearrange k into (n m)
-        # TODO NEEDS POSITION BIAS MASK
+        out = F.scaled_dot_product_attention(
+            q, desired_keys, desired_values, attn_mask=None)
+        
+        out = rearrange(out, "b H nm km E -> (b nm) (km H E)")
         return self.proj(out)
 
 
