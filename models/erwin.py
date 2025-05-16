@@ -715,7 +715,7 @@ class NSAMSA(nn.Module):
         similarity = queries @ keys
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_indices
-    
+
     def select_balls_mlp(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
         queries = rearrange(q, "b H n m E -> b H (n m) E")
         keys = self.selection_proj(
@@ -757,12 +757,12 @@ class NSAMSA(nn.Module):
         # Rearrange topk
         desired_keys = rearrange(desired_keys, "... n m E -> ... (n m) E")
         desired_values = rearrange(desired_values, "... n m E -> ... (n m) E")
-        
+
         q = repeat(q, "b H n m E -> b H (n m) km E", km=1)
-        
+
         out = F.scaled_dot_product_attention(
             q, desired_keys, desired_values, attn_mask=None)
-        
+
         out = rearrange(out, "b H nm km E -> (b nm) (km H E)")
         return self.proj(out)
 
@@ -774,7 +774,6 @@ class ErwinTransformerBlock(nn.Module):
         num_heads: int,
         ball_size: int,
         mlp_ratio: int,
-        msa_type: str,
         dimensionality: int = 3,
         msa_type: str = "BallMSA",
         attn_kwargs: dict = {},
@@ -814,12 +813,16 @@ class BasicLayer(nn.Module):
         ball_size: int,
         mlp_ratio: int,
         rotate: bool,
-        msa_type: str,
         dimensionality: int = 3,
         msa_type: str = "BallMSA",
+        nsa_type: str | None = None,
         attn_kwargs: dict = {},
     ):
         super().__init__()
+
+        # quick assertion to make sure we aren't sharing attn_kwargs
+        if nsa_type is not None:
+            assert msa_type == "BallMSA"
 
         self.blocks = nn.ModuleList(
             [
@@ -830,21 +833,23 @@ class BasicLayer(nn.Module):
                     mlp_ratio,
                     msa_type,
                     dimensionality,
-                    attn_kwargs,
+                    attn_kwargs if nsa_type is None else {},
                 )
                 for _ in range(depth)
             ]
         )
-        self.nsa_block = ErwinTransformerBlock(
-                dim,
-                num_heads,
-                16,
-                mlp_ratio,
-                "NSAMSA",
-                dimensionality,
-                attn_kwargs,
-            )
-                
+        self.nsa_block = None
+        if nsa_type is not None:
+            self.nsa_block = ErwinTransformerBlock(
+                    dim,
+                    num_heads,
+                    16,
+                    mlp_ratio,
+                    nsa_type,
+                    dimensionality,
+                    attn_kwargs,
+                )
+
         self.rotate = [i % 2 for i in range(depth)] if rotate else [False] * depth
 
         self.pool = lambda node: node
@@ -880,8 +885,9 @@ class BasicLayer(nn.Module):
                 ]
             else:
                 node.x = blk(node.x, node.pos, num_batches)
-                
-        node.x = self.nsa_block(node.x, node.pos, num_batches)
+
+        if self.nsa_block is not None:
+            node.x = self.nsa_block(node.x, node.pos, num_batches)
         return self.pool(node)
 
 
@@ -953,7 +959,7 @@ class BasicLayerNSA(nn.Module):
                 node.x = self.rotate_block[i](node.x, node.pos)
             else:
                 node.x = blk(node.x, node.pos)
-        
+
         return self.pool(node)
 
 
@@ -1005,12 +1011,12 @@ class ErwinTransformer(nn.Module):
         dec_depths: List,
         strides: List,
         rotate: int,
-        msa_type: str,
+        msa_type: str = "BallMSA",
+        nsa_type: str | None = None,
         decode: bool = True,
         mlp_ratio: int = 4,
         dimensionality: int = 3,
         mp_steps: int = 3,
-        msa_type: str = "BallMSA",
         attn_kwargs: dict = {},
     ):
         super().__init__()
@@ -1019,6 +1025,8 @@ class ErwinTransformer(nn.Module):
         assert len(strides) == len(ball_sizes) - 1
 
         print(f"msa_type = {msa_type}")
+        if nsa_type is not None:
+            print(f"nsa_type = {nsa_type}")
         self.rotate = rotate
         self.decode = decode
         self.ball_sizes = ball_sizes
@@ -1033,9 +1041,7 @@ class ErwinTransformer(nn.Module):
 
         print(num_layers)
 
-        print(f"using {msa_type}")
-
-        if msa_type == "LucidRains":
+        if nsa_type == "LucidRains" or msa_type == "LucidRains":
             for kw, v in get_default_args(LucidRains.__init__).items():
                 print(f"{kw}:", attn_kwargs[kw] if kw in attn_kwargs.keys() else v)
 
@@ -1054,6 +1060,7 @@ class ErwinTransformer(nn.Module):
                     mlp_ratio=mlp_ratio,
                     dimensionality=dimensionality,
                     msa_type=msa_type,
+                    nsa_type=nsa_type,
                     attn_kwargs=attn_kwargs,
                 )
             )
@@ -1069,6 +1076,7 @@ class ErwinTransformer(nn.Module):
             mlp_ratio=mlp_ratio,
             dimensionality=dimensionality,
             msa_type=msa_type,
+            nsa_type=nsa_type,
             attn_kwargs=attn_kwargs,
         )
 
@@ -1087,6 +1095,7 @@ class ErwinTransformer(nn.Module):
                         mlp_ratio=mlp_ratio,
                         dimensionality=dimensionality,
                         msa_type=msa_type,
+                        nsa_type=nsa_type,
                         attn_kwargs=attn_kwargs,
                     )
                 )
