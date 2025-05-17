@@ -15,6 +15,7 @@ from einops import einsum, rearrange, reduce, repeat
 
 from .native_sparse_attention import (
     SparseAttention,
+    SparseAttentionMinimal,
     create_sliding_mask,
     create_fine_mask,
 )  # local file
@@ -331,7 +332,7 @@ class LucidRains(nn.Module):
         use_miniballattn: bool = True,
         topk: int = 2,
         kv_head_factor: int = 4,
-        dim_head_factor: int = 2,
+        dim_head_factor: int = 1,
         compress_stride_fraction: int = 1,
         compress_mlp_expand_factor: float = 1.0
     ):
@@ -370,7 +371,7 @@ class LucidRains(nn.Module):
         # basic dim checks
         assert dim % num_heads == 0
         assert num_heads % kv_head_factor == 0
-        dim_head = dim // num_heads
+        dim_head = dim // num_heads * dim_head_factor
         kv_heads = num_heads // kv_head_factor
 
         self.sparse_attn = SparseAttention(
@@ -457,7 +458,6 @@ class LucidRainsMinimal(nn.Module):
         num_heads: int,
         ball_size: int,
         dimensionality: int,
-        bs: int,
         selection_ball_size: int,
         per_ball: bool = False,
         use_flex_attn: bool = False,
@@ -465,20 +465,21 @@ class LucidRainsMinimal(nn.Module):
         use_miniballattn: bool = True,
         topk: int = 2,
         kv_head_factor: int = 4,
-        dim_head_factor: int = 2,
+        dim_head_factor: int = 1,
         compress_stride_fraction: int = 1,
         compress_mlp_expand_factor: float = 1.0,
+        custom_num_heads: int | None = None,
     ):
         super().__init__()
         self.dim = dim
+        if custom_num_heads is not None:
+            num_heads = custom_num_heads
         self.num_heads = num_heads
         self.ball_size = selection_ball_size
         self.per_ball = per_ball
         self.use_flex_attn = use_flex_attn
         self.use_triton_impl = use_triton_impl
-        self.bs = bs
 
-        print(f"bs: {bs}")
 
         if use_flex_attn:
             assert flex_attention is not None
@@ -507,7 +508,7 @@ class LucidRainsMinimal(nn.Module):
         # basic dim checks
         assert dim % num_heads == 0
         assert num_heads % kv_head_factor == 0
-        dim_head = dim // num_heads
+        dim_head = dim // num_heads * dim_head_factor
         kv_heads = num_heads // kv_head_factor
 
         self.sparse_attn = SparseAttentionMinimal(
@@ -544,7 +545,7 @@ class LucidRainsMinimal(nn.Module):
         pos = pos.view(num_balls, self.ball_size, dim)
         return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
 
-    def forward(self, x: torch.Tensor, pos: torch.Tensor):
+    def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
         # with torch.cuda.amp.autocast():
         assert not torch.isnan(x).any(), "NaN in inputs!"
         assert not torch.isinf(x).any(), "Inf in inputs!"
@@ -556,7 +557,7 @@ class LucidRainsMinimal(nn.Module):
         if self.per_ball:
             x = rearrange(x, "(n m) E -> n m E", m=self.ball_size)
         else:
-            x = rearrange(x, "(bs num_pts) E -> bs num_pts E", bs=self.bs)
+            x = rearrange(x, "(bs num_pts) E -> bs num_pts E", bs=num_batches)
         # if not self.B:
         #     self.B = x.shape[1]
         #     printd("seq_len is", self.B)
@@ -668,11 +669,12 @@ class NSAMSA(nn.Module):
         dimensionality: int = 3,
         topk: int = 2,
         use_diff_topk: bool = True,
+        selection_ball_size = 16,
     ):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
-        self.ball_size = ball_size
+        self.ball_size = selection_ball_size
         self.topk = topk
         self.scale = dim**-0.5
         self.use_diff_topk = use_diff_topk
@@ -681,7 +683,7 @@ class NSAMSA(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.pe_proj = nn.Linear(dimensionality, dim)
 
-        self.selection_proj = nn.Linear(ball_size * dim // num_heads, dim // num_heads)
+        self.selection_proj = nn.Linear(selection_ball_size * dim // num_heads, dim // num_heads)
         from einops.layers.torch import Rearrange
 
         # self.qkv = nn.Identity()
@@ -843,7 +845,7 @@ class BasicLayer(nn.Module):
             self.nsa_block = ErwinTransformerBlock(
                     dim,
                     num_heads,
-                    16,
+                    ball_size,
                     mlp_ratio,
                     nsa_type,
                     dimensionality,

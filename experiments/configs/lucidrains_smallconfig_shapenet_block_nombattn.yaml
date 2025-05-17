@@ -8,13 +8,13 @@ dec_depths: [6]
 strides: [1]
 rotate: 0
 mp_steps: 3
-msa_type: "LucidRains"
+nsa_type: "LucidRains"
 attn_kwargs:
     selection_ball_size: 64
     per_ball: false
     use_flex_attn: false
     use_triton_impl: true
-    use_miniballattn: True
+    use_miniballattn: false
     kv_head_factor: 1
     topk: 8
     dim_head_factor: 1
