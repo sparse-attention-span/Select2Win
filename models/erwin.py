@@ -240,7 +240,7 @@ class BallMSA(nn.Module):
     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
 
     def __init__(
-        self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3
+        self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3, lastnsa=False, beginnsa=False, middlensa=False
     ):
         super().__init__()
         self.dim = dim
@@ -294,6 +294,9 @@ class LucidRains(nn.Module):
         use_triton_impl: bool,
         use_gqa: bool,
         dimensionality: int,
+        lastnsa=False,
+        beginnsa=False,
+        middlensa=False
     ):
         super().__init__()
         self.dim = dim
@@ -410,6 +413,9 @@ class NSAMSA(nn.Module):
         dimensionality: int = 3,
         topk: int = 2,
         use_diff_topk: bool = True,
+        lastnsa=False,
+        beginnsa=False,
+        middlensa=False
     ):
         super().__init__()
         self.dim = dim
@@ -560,6 +566,8 @@ class BasicLayer(nn.Module):
     ):
         super().__init__()
 
+        self.attn_kwargs = attn_kwargs
+
         self.blocks = nn.ModuleList(
             [
                 ErwinTransformerBlock(
@@ -574,15 +582,19 @@ class BasicLayer(nn.Module):
                 for _ in range(depth)
             ]
         )
-        self.nsa_block = ErwinTransformerBlock(
-                dim,
-                num_heads,
-                16,
-                mlp_ratio,
-                "NSAMSA",
-                dimensionality,
-                attn_kwargs,
-            )
+        if self.attn_kwargs['lastnsa'] or self.attn_kwargs['beginnsa'] or self.attn_kwargs['middlensa']:
+            self.nsa_block = ErwinTransformerBlock(
+                    dim,
+                    num_heads,
+                    16,
+                    mlp_ratio,
+                    "NSAMSA",
+                    dimensionality,
+                    attn_kwargs,
+                )
+        print(f"self.attn_kwargs.lastnsa: {self.attn_kwargs['lastnsa']}")
+        print(f"self.attn_kwargs.beginnsa: {self.attn_kwargs['beginnsa']}")
+        print(f"self.attn_kwargs.middlensa: {self.attn_kwargs['middlensa']}")
                 
         self.rotate = [i % 2 for i in range(depth)] if rotate else [False] * depth
 
@@ -598,6 +610,7 @@ class BasicLayer(nn.Module):
         printd("Erwin transformer blocks:")
         node = self.unpool(node)
 
+
         if (
             len(self.rotate) > 1 and self.rotate[1]
         ):  # if rotation is enabled, it will be used in the second block
@@ -611,16 +624,24 @@ class BasicLayer(nn.Module):
         num_batches = node.batch_idx.max() + 1
         assert num_batches > 0
 
+        if self.attn_kwargs['beginnsa']:
+            node.x = self.nsa_block(node.x, node.pos, num_batches)
+
+        total = len(self.blocks)
+        break_point = total //2
         for i, (rotate, blk) in enumerate(zip(self.rotate, self.blocks)):
             printd(f"{i} ", end="")
+            if self.attn_kwargs['middlensa'] and i == break_point:
+                node.x = self.nsa_block(node.x, node.pos, num_batches)
             if rotate:
                 node.x = blk(node.x[node.tree_idx_rot], node.pos[node.tree_idx_rot], num_batches)[
                     tree_idx_rot_inv
                 ]
             else:
                 node.x = blk(node.x, node.pos, num_batches)
-                
-        node.x = self.nsa_block(node.x, node.pos, num_batches)
+
+        if self.attn_kwargs['lastnsa']:
+            node.x = self.nsa_block(node.x, node.pos, num_batches)
         return self.pool(node)
 
 

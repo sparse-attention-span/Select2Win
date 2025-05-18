@@ -55,6 +55,9 @@ def parse_args():
     parser.add_argument("--lucidrains-flex-attn", action='store_true')
 
     parser.add_argument("--nsamsa-use-diff-topk", action='store_true')
+    parser.add_argument("--lastnsa", action='store_true')
+    parser.add_argument("--beginnsa", action='store_true')
+    parser.add_argument("--middlensa", action='store_true')
 
     return parser.parse_args()
 
@@ -65,13 +68,20 @@ def get_attn_kwargs(args):
             "use_flex_attn": args.lucidrains_flex_attn,
             "use_triton_impl": args.lucidrains_triton_kernel,
             "use_gqa": args.lucidrains_gqa,
+            "lastnsa": args.lastnsa,
+            "middlensa": args.middlensa,
+            "beginnsa": args.beginnsa,
         }
     elif args.msa_type == "NSAMSA":
         kwargs = {
-            "use_diff_topk": args.nsamsa_use_diff_topk
+            "use_diff_topk": args.nsamsa_use_diff_topk,
+            "lastnsa": False,
+            "middlensa": False,
+            "beginnsa": False,
         }
     else:
-        kwargs = {}
+        kwargs = {"lastnsa": args.lastnsa, "middlensa": args.middlensa,
+            "beginnsa": args.beginnsa,}
 
     return kwargs
 
@@ -190,7 +200,11 @@ if __name__ == "__main__":
 
     model_config["msa_type"] = args.msa_type
 
-    main_model = model_cls[args.model](**model_config, attn_kwargs=get_attn_kwargs(args))
+    attn_kwargs=get_attn_kwargs(args)
+    print(f"attn_kwargs.lastnsa {attn_kwargs['lastnsa']}")
+    print(f"attn_kwargs.middlensa {attn_kwargs['middlensa']}")
+    print(f"attn_kwargs.beginnsa {attn_kwargs['beginnsa']}")
+    main_model = model_cls[args.model](**model_config, attn_kwargs=attn_kwargs)
     model = ShapenetCarModel(main_model).cuda()
     model = torch.compile(model)
 
