@@ -266,7 +266,7 @@ class BallMSA(nn.Module):
     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
 
     def __init__(
-        self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3
+        self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3, lastnsa=False, beginnsa=False, middlensa=False
     ):
         super().__init__()
         self.dim = dim
@@ -1026,6 +1026,7 @@ class BasicLayer(nn.Module):
         printd("Erwin transformer blocks:")
         node = self.unpool(node)
 
+
         if (
             len(self.rotate) > 1 and any(self.rotate)
         ):
@@ -1039,8 +1040,15 @@ class BasicLayer(nn.Module):
         num_batches = node.batch_idx.max() + 1
         assert num_batches > 0
 
+        if self.attn_kwargs['beginnsa']:
+            node.x = self.nsa_block(node.x, node.pos, num_batches)
+
+        total = len(self.blocks)
+        break_point = total //2
         for i, (rotate, blk) in enumerate(zip(self.rotate, self.blocks)):
             printd(f"{i} ", end="")
+            if self.attn_kwargs['middlensa'] and i == break_point:
+                node.x = self.nsa_block(node.x, node.pos, num_batches)
             if rotate:
                 node.x = blk(node.x[node.tree_idx_rot], node.pos[node.tree_idx_rot], num_batches)[
                     tree_idx_rot_inv
