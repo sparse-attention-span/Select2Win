@@ -22,6 +22,7 @@ from .native_sparse_attention import (
 from typing import Literal, List
 from dataclasses import dataclass
 from native_sparse_attention_pytorch.compress_networks import GroupedMLP  # lib
+from native_sparse_attention_pytorch.triton_native_sparse_attention import native_sparse_attend
 
 from balltree import build_balltree_with_rotations
 
@@ -311,7 +312,7 @@ class MiniBallAttn(nn.Module):
         B = q.shape[0]
         q, k, v = tuple(rearrange(t, "B H (n m) ... -> (B n) H m ...", m=self.ball_size) for t in (q, k, v))
         x = F.scaled_dot_product_attention(
-            q, k, v, enable_gqa=True
+            q, k, v
         )
         x = rearrange(x, "(B n) H m ... -> B H (n m) ...", m=self.ball_size, B=B)
 
@@ -769,6 +770,137 @@ class NSAMSA(nn.Module):
         return self.proj(out)
 
 
+class NSAMSA_triton(nn.Module):
+    """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
+
+    def __init__(
+        self,
+        dim: int,
+        num_heads: int,
+        ball_size: int,
+        dimensionality: int = 3,
+        topk: int = 2,
+        use_diff_topk: bool = True,
+        selection_ball_size: int = 16,
+        use_flex: bool = False,
+        custom_num_heads: int | None = None,
+        head_dim_factor: int = 1,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.num_heads = num_heads
+        self.ball_size = selection_ball_size
+        self.topk = topk
+        self.scale = dim**-0.5
+        self.use_diff_topk = use_diff_topk
+        self.use_flex = use_flex
+        head_dim = dim // num_heads * head_dim_factor
+
+        self.qkv = nn.Linear(dim, 3 * dim * head_dim_factor)
+        self.proj = nn.Linear(dim * head_dim_factor, dim)
+        self.pe_proj = nn.Linear(dimensionality, dim)
+
+        self.selection_proj = nn.Linear(selection_ball_size * head_dim, head_dim)
+        # from einops.layers.torch import Rearrange
+
+        # self.qkv = nn.Identity()
+        # self.proj = nn.Identity()
+        # self.pe_proj = nn.Identity()
+
+        self.sigma_att = nn.Parameter(-1 + 0.01 * torch.randn((1, num_heads, 1, 1)))
+
+    @torch.no_grad()
+    def create_attention_mask(self, pos: torch.Tensor):
+        """Distance-based attention bias (eq. 10)."""
+        pos = rearrange(pos, "(n m) d -> n m d", m=self.ball_size)
+        return self.sigma_att * torch.cdist(pos, pos, p=2).unsqueeze(1)
+
+    @torch.no_grad()
+    def compute_rel_pos(self, pos: torch.Tensor):
+        """Relative position of leafs wrt the center of the ball (eq. 9)."""
+        pos = rearrange(pos, "(n m) E -> n m E", m=self.ball_size)
+        # num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
+        # pos = pos.view(num_balls, self.ball_size, dim)
+        pos = pos - pos.mean(dim=1, keepdim=True)
+        return rearrange(pos, "n m E -> (n m) E")
+        # return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
+
+    @torch.no_grad()
+    def select_balls_mean(
+        self, q: torch.Tensor, k: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        queries = rearrange(q, "b H n m E -> b H (n m) E")
+        keys = reduce(k, "b H n m E -> b H E n", "mean")
+        similarity = queries @ keys
+        topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
+        return topk_indices
+
+    def select_balls_mlp(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
+        queries = rearrange(q, "b H n m E -> b H (n m) E")
+        keys = self.selection_proj(
+            rearrange(k, "b H n m E -> b H n (m E)")
+        ).squeeze(-1)
+        keys = rearrange(keys, "b H km E -> b H E km")
+        similarity = queries @ keys
+        topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
+        return topk_values, topk_indices
+
+    def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
+        # Enable asserts to debug NaNs
+        assert not torch.isnan(x).any(), "NaN in inputs!"
+        assert not torch.isinf(x).any(), "Inf in inputs!"
+        assert not torch.isnan(pos).any(), "NaN in pos!"
+        assert not torch.isinf(pos).any(), "Inf in pos!"
+
+        x = x + self.pe_proj(self.compute_rel_pos(pos))
+        qkv = self.qkv(x)
+        q, k, v = repeat(
+            qkv,
+            "(b n m) (H E K) -> K b H n m E",
+            b=num_batches,
+            H=self.num_heads,
+            m=self.ball_size,
+            K=3,
+        )
+
+        # print(q.dtype)
+
+        topk_values, topk_indices = self.select_balls_mlp(q, k)
+
+        topk_indices = topk_indices.contiguous()
+
+        q = rearrange(q, "b H n m E -> b H (n m) E").contiguous()
+        k = rearrange(k, "b H n m E -> b H (n m) E").contiguous()
+        v = rearrange(v, "b H n m E -> b H (n m) E").contiguous()
+
+        if not self.use_flex:
+
+            topk_values = F.pad(topk_values, (1, 0), value = -1e3)
+            topk_values = topk_values.softmax(dim = -1)
+            topk_values = topk_values[..., 1:]
+
+            fmask = (topk_values > 1e-10).contiguous()
+            # print(q.dtype)
+            out = native_sparse_attend(
+                q, k, v,
+                self.ball_size,
+                topk_indices,
+                fmask,
+                include_block_causal = False
+            )
+
+        else:
+            fine_selection_flex_mask = create_fine_mask(q.shape[2], self.ball_size)
+            fine_block_mask = fine_selection_flex_mask(topk_indices)
+
+            out = flex_attention(q, k, v, block_mask = fine_block_mask)
+        # print(out.dtype)
+
+        out = rearrange(out, "b H nm E -> (b nm) (H E)")
+        return self.proj(out)
+
+
+
 class ErwinTransformerBlock(nn.Module):
     def __init__(
         self,
@@ -790,6 +922,7 @@ class ErwinTransformerBlock(nn.Module):
             "BallMSA": BallMSA,
             "NSAMSA": NSAMSA,
             "LucidRains": LucidRainsMinimal,
+            "NSAMSA_triton": NSAMSA_triton,
         }[msa_type]
 
         self.BMSA = MSABase(

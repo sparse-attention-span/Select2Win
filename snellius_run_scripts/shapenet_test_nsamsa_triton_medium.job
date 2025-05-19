@@ -13,4 +13,4 @@ cd experiments
 
 uv run train_shapenet.py --num-epochs 100000 --lr 1e-3 --use-wandb --test \
  --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" \
- --msa-type BallMSA --experiment shapenet_noclip
+ --nsa-type NSAMSA_triton --size medium --experiment NSAMSA_triton_shapenet_medium_100k

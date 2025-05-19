@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument("--msa-type", type=str, default="BallMSA",
                         choices=["BallMSA", "NSAMSA", "LucidRains"])
     parser.add_argument("--nsa-type", type=str, default="",
-                        choices=["", "BallMSA", "NSAMSA", "LucidRains"])
+                        choices=["", "BallMSA", "NSAMSA", "LucidRains", "NSAMSA_triton"])
     # parser.add_argument("--erwintype", type=str, default="normal",
     #                     choices=["normal", "replacerotate"])
 
@@ -162,6 +162,9 @@ if __name__ == "__main__":
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 
     train_dataset = ShapenetCarDataset(
         data_path=args.data_path,
@@ -230,7 +233,7 @@ if __name__ == "__main__":
 
     print(f"lr: {args.lr}")
     optimizer = AdamW(model.parameters(), lr=args.lr)
-    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=5e-5)
 
     config = vars(args)

@@ -942,6 +942,17 @@ class SparseAttentionMinimal(Module):
 
                 # print(torch.any(fq.isnan()), torch.any(fk.isnan()), torch.any(fv.isnan()))
 
+                # print("shapes:")
+                # print(fq.shape)
+                # print(fk.shape)
+                # print(fv.shape)
+                # print(selected_block_indices.shape)
+                # print(fmask.shape)
+                # print(torch.all(fmask))
+                # print(gates)
+                # print(selected_block_indices[0,0,:5])
+                # print(fmask[0,0,:5])
+
                 fine_attn_out = native_sparse_attend(
                     fq, fk, fv,
                     self.selection_block_size,

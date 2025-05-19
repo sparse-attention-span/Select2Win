@@ -136,12 +136,11 @@ def train_step(model, batch, optimizer, scheduler):
     stat_dict = model.training_step(batch)
     stat_dict["train/loss"].backward()
 
-    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
     optimizer.step()
     if scheduler is not None:
         scheduler.step()
-    stat_dict["train/lr"] = optimizer.param_groups[0]["lr"]
     stat_dict["train/lr"] = optimizer.param_groups[0]["lr"]
     return stat_dict
 

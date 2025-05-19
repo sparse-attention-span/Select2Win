@@ -19,5 +19,9 @@ cd experiments
 
 uv run train_shapenet.py --lr 1e-3 --num-epochs 15000 --use-wandb --test \
  --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" \
- --config configs/lucidrains_smallconfig_shapenet_block_2.yaml \
- --experiment blockLucidrainsShapenet_comparable
+ --size small --experiment NSALastPytorch_smallerwin_nogradclip3deterministic15k --nsa-type NSAMSA
+
+ uv run train_shapenet.py --lr 1e-3 --num-epochs 15000 --use-wandb --test \
+ --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" \
+ --config configs/nsamsa_smallconfig_shapenet_h8h4.yaml \
+ --experiment NSALastPytorch_smallerwin_nogradclip_h8h4_15k
