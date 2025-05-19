@@ -22,7 +22,7 @@ from .native_sparse_attention import (
 from typing import Literal, List
 from dataclasses import dataclass
 from native_sparse_attention_pytorch.compress_networks import GroupedMLP  # lib
-from native_sparse_attention_pytorch.triton_native_sparse_attention import native_sparse_attend
+from .triton_native_sparse_attention import native_sparse_attend
 
 from balltree import build_balltree_with_rotations
 
@@ -45,6 +45,21 @@ try:
         flex_attention = torch.compile(flex_attention)
 except ImportError:
     pass
+
+def parse_index_list(s, depth):
+    import ast
+    try:
+        result = ast.literal_eval(s)
+        result = [r if r>=0 else depth + 1 + r for r in result]
+        if (
+            isinstance(result, list) and
+            all(isinstance(x, int) for x in result) and
+            result == sorted([i for i in result if i >= 0])
+        ):
+            return result
+    except (ValueError, SyntaxError):
+        pass
+    raise ValueError("nsa-loc must be a string representing a list of indices in order from first to last.")
 
 
 def print_memory_usage():
@@ -951,13 +966,29 @@ class BasicLayer(nn.Module):
         msa_type: str = "BallMSA",
         dimensionality: int = 3,
         nsa_type: str | None = None,
+        nsa_loc: str = "last",
         attn_kwargs: dict = {},
     ):
         super().__init__()
 
+        print("nsa_loc:", nsa_loc)
+
+        if nsa_loc in ("last", "end"):
+            nsa_loc = [depth]
+        elif nsa_loc in ("middle", "center"):
+            nsa_loc = [depth//2]
+        elif nsa_loc in ("first", "begin", "start"):
+            nsa_loc = [0]
+        else:
+            nsa_loc = parse_index_list(nsa_loc, depth)
+            nsa_loc = [loc + i for i, loc in enumerate(nsa_loc)]
+
+        print("list:", nsa_loc)
+
         # quick assertion to make sure we aren't sharing attn_kwargs
         if nsa_type is not None:
             assert msa_type == "BallMSA"
+
 
         self.blocks = nn.ModuleList(
             [
@@ -973,19 +1004,26 @@ class BasicLayer(nn.Module):
                 for _ in range(depth)
             ]
         )
-        self.nsa_block = None
-        if nsa_type is not None:
-            self.nsa_block = ErwinTransformerBlock(
-                    dim,
-                    num_heads,
-                    ball_size,
-                    mlp_ratio,
-                    nsa_type,
-                    dimensionality,
-                    attn_kwargs,
-                )
 
         self.rotate = [i % 2 for i in range(depth)] if rotate else [False] * depth
+
+        # self.nsa_block = None
+        if nsa_type is not None:
+            assert len(nsa_loc) > 0
+            for loc in nsa_loc:
+                self.blocks.insert(
+                    loc,
+                    ErwinTransformerBlock(
+                        dim,
+                        num_heads,
+                        ball_size,
+                        mlp_ratio,
+                        nsa_type,
+                        dimensionality,
+                        attn_kwargs,
+                    )
+                )
+                self.rotate.insert(loc, 0)
 
         self.pool = lambda node: node
         self.unpool = lambda node: node
@@ -995,13 +1033,17 @@ class BasicLayer(nn.Module):
         elif direction == "up" and stride is not None:
             self.unpool = BallUnpooling(dim, stride, dimensionality)
 
+        print(self.blocks)
+        print("rotate end:", self.rotate)
+        print()
+
     def forward(self, node: Node) -> Node:
         printd("Erwin transformer blocks:")
         node = self.unpool(node)
 
         if (
-            len(self.rotate) > 1 and self.rotate[1]
-        ):  # if rotation is enabled, it will be used in the second block
+            len(self.rotate) > 1 and any(self.rotate)
+        ):
             assert (
                 node.tree_idx_rot is not None
             ), "tree_idx_rot must be provided for rotation"
@@ -1021,8 +1063,8 @@ class BasicLayer(nn.Module):
             else:
                 node.x = blk(node.x, node.pos, num_batches)
 
-        if self.nsa_block is not None:
-            node.x = self.nsa_block(node.x, node.pos, num_batches)
+        # if self.nsa_block is not None:
+        #     node.x = self.nsa_block(node.x, node.pos, num_batches)
         return self.pool(node)
 
 
@@ -1148,6 +1190,7 @@ class ErwinTransformer(nn.Module):
         rotate: int,
         msa_type: str = "BallMSA",
         nsa_type: str | None = None,
+        nsa_loc: str = "last",
         decode: bool = True,
         mlp_ratio: int = 4,
         dimensionality: int = 3,
@@ -1196,6 +1239,7 @@ class ErwinTransformer(nn.Module):
                     dimensionality=dimensionality,
                     msa_type=msa_type,
                     nsa_type=nsa_type,
+                    nsa_loc=nsa_loc,
                     attn_kwargs=attn_kwargs,
                 )
             )
@@ -1212,6 +1256,7 @@ class ErwinTransformer(nn.Module):
             dimensionality=dimensionality,
             msa_type=msa_type,
             nsa_type=nsa_type,
+            nsa_loc=nsa_loc,
             attn_kwargs=attn_kwargs,
         )
 
@@ -1231,6 +1276,7 @@ class ErwinTransformer(nn.Module):
                         dimensionality=dimensionality,
                         msa_type=msa_type,
                         nsa_type=nsa_type,
+                        nsa_loc=nsa_loc,
                         attn_kwargs=attn_kwargs,
                     )
                 )
