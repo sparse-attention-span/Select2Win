@@ -12,7 +12,7 @@ from models.erwin import (
     BallMSA,
     NativelySparseBallAttention,
     BasicLayer,
-    SpErwinTransformer, # this is Erwin with the added NSA block
+    SpErwinTransformer,
 )
 
 from benchmark.bench_visual_field import compute_specific_grads
@@ -76,8 +76,19 @@ def add_model_visual_field(model, x, node_positions, i, ax):
 
     # affected NB
     ax.scatter(node_positions[:, 0], node_positions[:, 1])
-    ax.scatter(affected_nodes[:, 0], affected_nodes[:, 1], color="orange")
-    ax.plot([node_positions[i, 0], node_positions[i, 1]])
+    ax.scatter(
+        affected_nodes[:, 0],
+        affected_nodes[:, 1],
+        color="orange",
+    )
+    ax.scatter(
+        node_positions[i, 0],
+        node_positions[i, 1],
+        marker="x",
+        s=100,
+        color="black",
+        label="Target node",
+    )
 
 
 if __name__ == "__main__":
@@ -181,6 +192,7 @@ if __name__ == "__main__":
 
     axes[0].set_title("Receptive field of Erwin")
     axes[1].set_title("Receptive field of Erwin-NSA")
+    axes[0].legend()
     plt.yticks([])
     plt.xticks([])
     plt.tight_layout()
