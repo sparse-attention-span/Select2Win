@@ -1,0 +1,23 @@
+#!/bin/bash
+#SBATCH --partition=gpu_h100
+#SBATCH --gpus=1
+#SBATCH --job-name=lucidSN
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --time=08:00:00
+#SBATCH --output=slurm/lucidshapenet.%A.%N.out
+
+module purge
+module load 2023
+module load CUDA/12.4.0
+source erwin/bin/activate
+
+# cd ./SeerAttention/seer_attn/kernels/block_sparse_attention
+# make build
+# cd ../../../..
+cd experiments
+
+uv run train_shapenet.py --lr 1e-3 --num-epochs 15000 --use-wandb --test \
+ --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" \
+ --config configs/lucidrains_smallconfig_shapenet_block_nombattn.yaml \
+ --size small --experiment blockLucidrainsShapenet_nombattn_2

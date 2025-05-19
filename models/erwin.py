@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Tuple
+import inspect
 
 import math
 import torch
@@ -14,14 +15,24 @@ from einops import einsum, rearrange, reduce, repeat
 
 from .native_sparse_attention import (
     SparseAttention,
+    SparseAttentionMinimal,
     create_sliding_mask,
     create_fine_mask,
 )  # local file
 from typing import Literal, List
 from dataclasses import dataclass
 from native_sparse_attention_pytorch.compress_networks import GroupedMLP  # lib
+from .triton_native_sparse_attention import native_sparse_attend
 
 from balltree import build_balltree_with_rotations
+
+def get_default_args(func):
+    signature = inspect.signature(func)
+    return {
+        k: v.default
+        for k, v in signature.parameters.items()
+        if v.default is not inspect.Parameter.empty
+    }
 
 # Enable debug prints
 DBGPRINTS = False
@@ -34,6 +45,21 @@ try:
         flex_attention = torch.compile(flex_attention)
 except ImportError:
     pass
+
+def parse_index_list(s, depth):
+    import ast
+    try:
+        result = ast.literal_eval(s)
+        result = [r if r>=0 else depth + 1 + r for r in result]
+        if (
+            isinstance(result, list) and
+            all(isinstance(x, int) for x in result) and
+            result == sorted([i for i in result if i >= 0])
+        ):
+            return result
+    except (ValueError, SyntaxError):
+        pass
+    raise ValueError("nsa-loc must be a string representing a list of indices in order from first to last.")
 
 
 def print_memory_usage():
@@ -240,7 +266,7 @@ class BallMSA(nn.Module):
     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
 
     def __init__(
-        self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3, lastnsa=False, beginnsa=False, middlensa=False
+        self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3
     ):
         super().__init__()
         self.dim = dim
@@ -280,6 +306,32 @@ class BallMSA(nn.Module):
         x = rearrange(x, "n H m E -> (n m) (H E)", H=self.num_heads, m=self.ball_size)
         return self.proj(x)
 
+class MiniBallAttn(nn.Module):
+    """Mini Ball Attention module. """
+    def __init__(
+        self, ball_size: int,
+    ):
+        super().__init__()
+        self.ball_size = ball_size
+        # self.sigma_att = nn.Parameter(-1 + 0.01 * torch.randn((1, num_heads, 1, 1)))
+
+    # @torch.no_grad()
+    # def create_attention_mask(self, pos: torch.Tensor):
+    #     """Distance-based attention bias (eq. 10)."""
+    #     pos = rearrange(pos, "(n m) d -> n m d", m=self.ball_size)
+    #     return self.sigma_att * torch.cdist(pos, pos, p=2).unsqueeze(1)
+
+    #attn_mask=self.create_attention_mask(pos)
+
+    def forward(self, q, k, v):
+        B = q.shape[0]
+        q, k, v = tuple(rearrange(t, "B H (n m) ... -> (B n) H m ...", m=self.ball_size) for t in (q, k, v))
+        x = F.scaled_dot_product_attention(
+            q, k, v
+        )
+        x = rearrange(x, "(B n) H m ... -> B H (n m) ...", m=self.ball_size, B=B)
+
+        return x
 
 class LucidRains(nn.Module):
     """NSA wrapper disregarding ball structure"""
@@ -289,14 +341,16 @@ class LucidRains(nn.Module):
         dim: int,
         num_heads: int,
         ball_size: int,
-        per_ball: bool,
-        use_flex_attn: bool,
-        use_triton_impl: bool,
-        use_gqa: bool,
         dimensionality: int,
-        lastnsa=False,
-        beginnsa=False,
-        middlensa=False
+        per_ball: bool = False,
+        use_flex_attn: bool = False,
+        use_triton_impl: bool = True,
+        use_miniballattn: bool = True,
+        topk: int = 2,
+        kv_head_factor: int = 4,
+        dim_head_factor: int = 1,
+        compress_stride_fraction: int = 1,
+        compress_mlp_expand_factor: float = 1.0
     ):
         super().__init__()
         self.dim = dim
@@ -305,49 +359,57 @@ class LucidRains(nn.Module):
         self.per_ball = per_ball
         self.use_flex_attn = use_flex_attn
         self.use_triton_impl = use_triton_impl
+
         if use_flex_attn:
             assert flex_attention is not None
+            assert not use_triton_impl
 
         if not per_ball:
             SLIDING_WINDOW_SIZE = ball_size
             COMPRESS_BLOCK_SIZE = ball_size
-            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size // 2
-
+            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//compress_stride_fraction
             FINE_BLOCK_SIZE = ball_size
-            NUM_FINE_SELECTED = 2
         else:
-            SLIDING_WINDOW_SIZE = ball_size // 8
-            COMPRESS_BLOCK_SIZE = ball_size // 8
-            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size // 16
+            print("WARNING: per_ball uses hardcoded values!")
+            SLIDING_WINDOW_SIZE = ball_size//8
+            COMPRESS_BLOCK_SIZE = ball_size//8
+            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//(8*compress_stride_fraction)
+            FINE_BLOCK_SIZE = ball_size//8
 
-            FINE_BLOCK_SIZE = ball_size // 8
-            NUM_FINE_SELECTED = 1
+        if use_miniballattn:
+            sliding_window_attn = MiniBallAttn(ball_size)
+        else:
+            SLIDING_WINDOW_SIZE = None # fixes bug where NSA defaults to sliding window
+            sliding_window_attn = None
 
-        kv_heads = num_heads // 4 if use_gqa else num_heads
+        print(f"Ball size: {ball_size}")
 
-        dim_head = dim // num_heads * 2
-
+        # basic dim checks
         assert dim % num_heads == 0
-        assert not (use_triton_impl and use_flex_attn)
+        assert num_heads % kv_head_factor == 0
+        dim_head = dim // num_heads * dim_head_factor
+        kv_heads = num_heads // kv_head_factor
 
         self.sparse_attn = SparseAttention(
-            dim=dim,
-            dim_head=dim_head,
-            heads=num_heads,
-            kv_heads=kv_heads,
-            sliding_window_size=SLIDING_WINDOW_SIZE,
-            compress_block_size=COMPRESS_BLOCK_SIZE,
-            compress_block_sliding_stride=COMPRESS_BLOCK_SLIDING_STRIDE,
-            compress_mlp=GroupedMLP(
-                dim_head=dim_head,
-                compress_window_size=COMPRESS_BLOCK_SIZE,
-                heads=kv_heads,
-            ),
-            selection_block_size=FINE_BLOCK_SIZE,
-            num_selected_blocks=NUM_FINE_SELECTED,
-            use_diff_topk=False,
-            use_triton_kernel=self.use_triton_impl,
-            query_heads_share_selected_kv=True,
+            dim = dim,
+            dim_head = dim_head,
+            heads = num_heads,
+            kv_heads = kv_heads,
+            sliding_window_size = SLIDING_WINDOW_SIZE,
+            compress_block_size = COMPRESS_BLOCK_SIZE,
+            compress_block_sliding_stride = COMPRESS_BLOCK_SLIDING_STRIDE,
+            # compress_mlp = GroupedMLP(
+            #     dim_head = dim_head,
+            #     compress_window_size = COMPRESS_BLOCK_SIZE,
+            #     heads = kv_heads,
+            # ),
+            compress_mlp_expand_factor=compress_mlp_expand_factor,
+            selection_block_size = FINE_BLOCK_SIZE,
+            num_selected_blocks = topk,
+            use_diff_topk = False,
+            use_triton_kernel = self.use_triton_impl,
+            query_heads_share_selected_kv = True,
+            sliding_window_attn = sliding_window_attn
         )
 
         self.sliding_window_size = SLIDING_WINDOW_SIZE
@@ -363,11 +425,15 @@ class LucidRains(nn.Module):
         return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor):
+        # with torch.cuda.amp.autocast():
+        assert not torch.isnan(x).any(), "NaN in inputs!"
+        assert not torch.isinf(x).any(), "Inf in inputs!"
+        assert not torch.isnan(pos).any(), "NaN in pos!"
+        assert not torch.isinf(pos).any(), "Inf in pos!"
+        # print(f"x has shape: {x.shape}")
         x = x + self.pe_proj(self.compute_rel_pos(pos))
         if self.per_ball:
-            x = rearrange(
-                x, "(n m) E -> n m E", m=self.ball_size
-            )  # Batch balls instead of computing global attn
+            x = rearrange(x, "(n m) E -> n m E", m=self.ball_size)
         else:
             x = x.unsqueeze(0)
         if not self.B:
@@ -401,6 +467,212 @@ class LucidRains(nn.Module):
 
         return x
 
+class LucidRainsMinimal(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        num_heads: int,
+        ball_size: int,
+        dimensionality: int,
+        selection_ball_size: int,
+        per_ball: bool = False,
+        use_flex_attn: bool = False,
+        use_triton_impl: bool = True,
+        use_miniballattn: bool = True,
+        topk: int = 2,
+        kv_head_factor: int = 4,
+        dim_head_factor: int = 1,
+        compress_stride_fraction: int = 1,
+        compress_mlp_expand_factor: float = 1.0,
+        custom_num_heads: int | None = None,
+    ):
+        super().__init__()
+        self.dim = dim
+        if custom_num_heads is not None:
+            num_heads = custom_num_heads
+        self.num_heads = num_heads
+        self.ball_size = selection_ball_size
+        self.per_ball = per_ball
+        self.use_flex_attn = use_flex_attn
+        self.use_triton_impl = use_triton_impl
+
+
+        if use_flex_attn:
+            assert flex_attention is not None
+            assert not use_triton_impl
+
+        if not per_ball:
+            SLIDING_WINDOW_SIZE = self.ball_size
+            COMPRESS_BLOCK_SIZE = self.ball_size
+            COMPRESS_BLOCK_SLIDING_STRIDE = self.ball_size//compress_stride_fraction
+            FINE_BLOCK_SIZE = self.ball_size
+        else:
+            print("WARNING: per_ball uses hardcoded values!")
+            SLIDING_WINDOW_SIZE = ball_size//8
+            COMPRESS_BLOCK_SIZE = ball_size//8
+            COMPRESS_BLOCK_SLIDING_STRIDE = ball_size//(8*compress_stride_fraction)
+            FINE_BLOCK_SIZE = ball_size//8
+
+        if use_miniballattn:
+            sliding_window_attn = MiniBallAttn(ball_size)
+        else:
+            SLIDING_WINDOW_SIZE = None # fixes bug where NSA defaults to sliding window
+            sliding_window_attn = None
+
+        print(f"Ball size: {ball_size}, selection ball size: {self.ball_size}")
+
+        # basic dim checks
+        assert dim % num_heads == 0
+        assert num_heads % kv_head_factor == 0
+        dim_head = dim // num_heads * dim_head_factor
+        kv_heads = num_heads // kv_head_factor
+
+        self.sparse_attn = SparseAttentionMinimal(
+            dim = dim,
+            dim_head = dim_head,
+            heads = num_heads,
+            kv_heads = kv_heads,
+            sliding_window_size = SLIDING_WINDOW_SIZE,
+            compress_block_size = COMPRESS_BLOCK_SIZE,
+            compress_block_sliding_stride = COMPRESS_BLOCK_SLIDING_STRIDE,
+            # compress_mlp = GroupedMLP(
+            #     dim_head = dim_head,
+            #     compress_window_size = COMPRESS_BLOCK_SIZE,
+            #     heads = kv_heads,
+            # ),
+            compress_mlp_expand_factor=compress_mlp_expand_factor,
+            selection_block_size = FINE_BLOCK_SIZE,
+            num_selected_blocks = topk,
+            use_diff_topk = False,
+            use_triton_kernel = self.use_triton_impl,
+            query_heads_share_selected_kv = True,
+            sliding_window_attn = sliding_window_attn
+        )
+
+        self.sliding_window_size = SLIDING_WINDOW_SIZE
+        self.selection_block_size = FINE_BLOCK_SIZE
+        self.pe_proj = nn.Linear(dimensionality, dim)
+        self.B = None
+
+    @torch.no_grad()
+    def compute_rel_pos(self, pos: torch.Tensor):
+        """ Relative position of leafs wrt the center of the ball (eq. 9). """
+        num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
+        pos = pos.view(num_balls, self.ball_size, dim)
+        return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
+
+    def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
+        # with torch.cuda.amp.autocast():
+        assert not torch.isnan(x).any(), "NaN in inputs!"
+        assert not torch.isinf(x).any(), "Inf in inputs!"
+        assert not torch.isnan(pos).any(), "NaN in pos!"
+        assert not torch.isinf(pos).any(), "Inf in pos!"
+        # print(f"x has shape: {x.shape}")
+        x = x + self.pe_proj(self.compute_rel_pos(pos))
+
+        if self.per_ball:
+            x = rearrange(x, "(n m) E -> n m E", m=self.ball_size)
+        else:
+            x = rearrange(x, "(bs num_pts) E -> bs num_pts E", bs=num_batches)
+        # if not self.B:
+        #     self.B = x.shape[1]
+        #     printd("seq_len is", self.B)
+        # elif x.shape[1] != self.B:
+        #     printd(f"points changed ({self.B} -> {x.shape[1]})")
+        disable_triton = not self.use_triton_impl
+
+        seq_len = x.shape[1]
+
+        if self.use_flex_attn and x.shape[1] == self.B:
+            sliding_window_flex_mask = create_sliding_mask(seq_len, self.sliding_window_size)
+            fine_selection_flex_mask = create_fine_mask(seq_len, self.selection_block_size)
+            x = self.sparse_attn(
+                x,
+                sliding_window_flex_mask=sliding_window_flex_mask,
+                fine_selection_flex_mask=fine_selection_flex_mask
+            )
+        else:
+            x = self.sparse_attn(x, disable_triton_kernel=disable_triton)
+
+        if self.per_ball:
+            x = rearrange(x, "n m E -> (n m) E", m=self.ball_size)
+        else:
+            # x = x.squeeze(0)
+            x = rearrange(x, "bs num_pts E -> (bs num_pts) E")
+
+        return x
+
+class LucidRainsMinimal_buggy(nn.Module):
+    """ NSA wrapper disregarding ball structure """
+    def __init__(
+        self,
+        dim: int,
+        num_heads: int,
+        ball_size: int,
+        dimensionality: int,
+        per_ball: bool = False,
+        use_flex_attn: bool = False,
+        use_triton_impl: bool = True,
+        use_miniballattn: bool = True,
+        topk: int = 2,
+        kv_head_factor: int = 4,
+        dim_head_factor: int = 2,
+        compress_stride_fraction: int = 1,
+        compress_mlp_expand_factor: float = 1.0
+    ):
+        # keeping above args for backward compatibility
+        super().__init__()
+
+
+        self.num_heads = num_heads
+        self.ball_size = ball_size
+
+        print("Init minimal lucidrains")
+
+        if use_miniballattn:
+            local_attn = MiniBallAttn(ball_size)
+        else:
+            local_attn = None
+
+        # basic dim checks
+        assert dim % num_heads == 0
+        assert num_heads % kv_head_factor == 0
+        dim_head = dim // num_heads
+        kv_heads = num_heads // kv_head_factor
+
+        print(f"head dim: {dim_head}")
+
+        self.sparse_attn = SparseAttentionMinimal(
+            dim = dim,
+            dim_head = dim_head,
+            q_heads = num_heads,
+            kv_heads = kv_heads,
+            block_size=ball_size,
+            topk=topk,
+            local_attn = local_attn
+        )
+
+        self.pe_proj = nn.Linear(dimensionality, dim)
+
+    @torch.no_grad()
+    def compute_rel_pos(self, pos: torch.Tensor):
+        """ Relative position of leafs wrt the center of the ball (eq. 9). """
+        num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
+        pos = pos.view(num_balls, self.ball_size, dim)
+        return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
+
+    def forward(self, x: torch.Tensor, pos: torch.Tensor):
+        # with torch.cuda.amp.autocast():
+        assert not torch.isnan(x).any(), "NaN in inputs!"
+        assert not torch.isinf(x).any(), "Inf in inputs!"
+        assert not torch.isnan(pos).any(), "NaN in pos!"
+        assert not torch.isinf(pos).any(), "Inf in pos!"
+        # print(f"x has shape: {x.shape}")
+        x = x + self.pe_proj(self.compute_rel_pos(pos))
+        x = x.unsqueeze(0)
+        x = self.sparse_attn(x)
+        x = x.squeeze(0)
+        return x
 
 class NSAMSA(nn.Module):
     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
@@ -413,14 +685,12 @@ class NSAMSA(nn.Module):
         dimensionality: int = 3,
         topk: int = 2,
         use_diff_topk: bool = True,
-        lastnsa=False,
-        beginnsa=False,
-        middlensa=False
+        selection_ball_size = 16,
     ):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
-        self.ball_size = ball_size
+        self.ball_size = selection_ball_size
         self.topk = topk
         self.scale = dim**-0.5
         self.use_diff_topk = use_diff_topk
@@ -429,7 +699,7 @@ class NSAMSA(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.pe_proj = nn.Linear(dimensionality, dim)
 
-        self.selection_proj = nn.Linear(ball_size * dim // num_heads, dim // num_heads)
+        self.selection_proj = nn.Linear(selection_ball_size * dim // num_heads, dim // num_heads)
         from einops.layers.torch import Rearrange
 
         # self.qkv = nn.Identity()
@@ -463,7 +733,7 @@ class NSAMSA(nn.Module):
         similarity = queries @ keys
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_indices
-    
+
     def select_balls_mlp(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
         queries = rearrange(q, "b H n m E -> b H (n m) E")
         keys = self.selection_proj(
@@ -505,14 +775,140 @@ class NSAMSA(nn.Module):
         # Rearrange topk
         desired_keys = rearrange(desired_keys, "... n m E -> ... (n m) E")
         desired_values = rearrange(desired_values, "... n m E -> ... (n m) E")
-        
+
         q = repeat(q, "b H n m E -> b H (n m) km E", km=1)
-        
+
         out = F.scaled_dot_product_attention(
             q, desired_keys, desired_values, attn_mask=None)
-        
+
         out = rearrange(out, "b H nm km E -> (b nm) (km H E)")
         return self.proj(out)
+
+
+class NSAMSA_triton(nn.Module):
+    """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
+
+    def __init__(
+        self,
+        dim: int,
+        num_heads: int,
+        ball_size: int,
+        dimensionality: int = 3,
+        topk: int = 2,
+        use_diff_topk: bool = True,
+        selection_ball_size: int = 16,
+        use_flex: bool = False,
+        custom_num_heads: int | None = None,
+        head_dim_factor: int = 1,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.num_heads = num_heads
+        self.ball_size = selection_ball_size
+        self.topk = topk
+        self.scale = dim**-0.5
+        self.use_diff_topk = use_diff_topk
+        self.use_flex = use_flex
+        head_dim = dim // num_heads * head_dim_factor
+
+        self.qkv = nn.Linear(dim, 3 * dim * head_dim_factor)
+        self.proj = nn.Linear(dim * head_dim_factor, dim)
+        self.pe_proj = nn.Linear(dimensionality, dim)
+
+        self.selection_proj = nn.Linear(selection_ball_size * head_dim, head_dim)
+        # from einops.layers.torch import Rearrange
+
+        # self.qkv = nn.Identity()
+        # self.proj = nn.Identity()
+        # self.pe_proj = nn.Identity()
+
+        self.sigma_att = nn.Parameter(-1 + 0.01 * torch.randn((1, num_heads, 1, 1)))
+
+    @torch.no_grad()
+    def create_attention_mask(self, pos: torch.Tensor):
+        """Distance-based attention bias (eq. 10)."""
+        pos = rearrange(pos, "(n m) d -> n m d", m=self.ball_size)
+        return self.sigma_att * torch.cdist(pos, pos, p=2).unsqueeze(1)
+
+    @torch.no_grad()
+    def compute_rel_pos(self, pos: torch.Tensor):
+        """Relative position of leafs wrt the center of the ball (eq. 9)."""
+        pos = rearrange(pos, "(n m) E -> n m E", m=self.ball_size)
+        # num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
+        # pos = pos.view(num_balls, self.ball_size, dim)
+        pos = pos - pos.mean(dim=1, keepdim=True)
+        return rearrange(pos, "n m E -> (n m) E")
+        # return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
+
+    @torch.no_grad()
+    def select_balls_mean(
+        self, q: torch.Tensor, k: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        queries = rearrange(q, "b H n m E -> b H (n m) E")
+        keys = reduce(k, "b H n m E -> b H E n", "mean")
+        similarity = queries @ keys
+        topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
+        return topk_indices
+
+    def select_balls_mlp(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
+        queries = rearrange(q, "b H n m E -> b H (n m) E")
+        keys = self.selection_proj(
+            rearrange(k, "b H n m E -> b H n (m E)")
+        ).squeeze(-1)
+        keys = rearrange(keys, "b H km E -> b H E km")
+        similarity = queries @ keys
+        topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
+        return topk_values, topk_indices
+
+    def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
+        # Enable asserts to debug NaNs
+        assert not torch.isnan(x).any(), "NaN in inputs!"
+        assert not torch.isinf(x).any(), "Inf in inputs!"
+        assert not torch.isnan(pos).any(), "NaN in pos!"
+        assert not torch.isinf(pos).any(), "Inf in pos!"
+
+        x = x + self.pe_proj(self.compute_rel_pos(pos))
+        qkv = self.qkv(x)
+        q, k, v = repeat(
+            qkv,
+            "(b n m) (H E K) -> K b H n m E",
+            b=num_batches,
+            H=self.num_heads,
+            m=self.ball_size,
+            K=3,
+        )
+
+        topk_values, topk_indices = self.select_balls_mlp(q, k)
+        topk_indices = topk_indices.contiguous()
+
+        q = rearrange(q, "b H n m E -> b H (n m) E").contiguous()
+        k = rearrange(k, "b H n m E -> b H (n m) E").contiguous()
+        v = rearrange(v, "b H n m E -> b H (n m) E").contiguous()
+
+        if not self.use_flex:
+
+            topk_values = F.pad(topk_values, (1, 0), value = -1e3)
+            topk_values = topk_values.softmax(dim = -1)
+            topk_values = topk_values[..., 1:]
+
+            fmask = (topk_values > 1e-10).contiguous()
+            out = native_sparse_attend(
+                q, k, v,
+                self.ball_size,
+                topk_indices,
+                fmask,
+                include_block_causal = False
+            )
+
+        else:
+            fine_selection_flex_mask = create_fine_mask(q.shape[2], self.ball_size)
+            fine_block_mask = fine_selection_flex_mask(topk_indices)
+
+            out = flex_attention(q, k, v, block_mask = fine_block_mask)
+
+        out = rearrange(out, "b H nm E -> (b nm) (H E)")
+        return self.proj(out)
+
 
 
 class ErwinTransformerBlock(nn.Module):
@@ -522,7 +918,7 @@ class ErwinTransformerBlock(nn.Module):
         num_heads: int,
         ball_size: int,
         mlp_ratio: int,
-        msa_type: str,
+        msa_type: str = "BallMSA",
         dimensionality: int = 3,
         attn_kwargs: dict = {},
     ):
@@ -530,11 +926,13 @@ class ErwinTransformerBlock(nn.Module):
         self.ball_size = ball_size
         self.norm1 = nn.RMSNorm(dim)
         self.norm2 = nn.RMSNorm(dim)
+        # self.dropout = nn.Dropout(p=0.1)
 
         MSABase = {
             "BallMSA": BallMSA,
             "NSAMSA": NSAMSA,
-            "LucidRains": LucidRains,
+            "LucidRains": LucidRainsMinimal,
+            "NSAMSA_triton": NSAMSA_triton,
         }[msa_type]
 
         self.BMSA = MSABase(
@@ -560,13 +958,27 @@ class BasicLayer(nn.Module):
         ball_size: int,
         mlp_ratio: int,
         rotate: bool,
-        msa_type: str,
+        msa_type: str = "BallMSA",
         dimensionality: int = 3,
+        nsa_type: str | None = None,
+        nsa_loc: str = "last",
         attn_kwargs: dict = {},
     ):
         super().__init__()
 
-        self.attn_kwargs = attn_kwargs
+        if nsa_loc in ("last", "end"):
+            nsa_loc = [depth]
+        elif nsa_loc in ("middle", "center"):
+            nsa_loc = [depth//2]
+        elif nsa_loc in ("first", "begin", "start"):
+            nsa_loc = [0]
+        else:
+            nsa_loc = parse_index_list(nsa_loc, depth)
+            nsa_loc = [loc + i for i, loc in enumerate(nsa_loc)]
+
+        # quick assertion to make sure we aren't sharing attn_kwargs
+        if nsa_type is not None:
+            assert msa_type == "BallMSA"
 
         self.blocks = nn.ModuleList(
             [
@@ -577,25 +989,116 @@ class BasicLayer(nn.Module):
                     mlp_ratio,
                     msa_type,
                     dimensionality,
+                    attn_kwargs if nsa_type is None else {},
+                )
+                for _ in range(depth)
+            ]
+        )
+
+        self.rotate = [i % 2 for i in range(depth)] if rotate else [False] * depth
+
+        if nsa_type is not None:
+            assert len(nsa_loc) > 0
+            for loc in nsa_loc:
+                self.blocks.insert(
+                    loc,
+                    ErwinTransformerBlock(
+                        dim,
+                        num_heads,
+                        ball_size,
+                        mlp_ratio,
+                        nsa_type,
+                        dimensionality,
+                        attn_kwargs,
+                    )
+                )
+                self.rotate.insert(loc, 0)
+
+        self.pool = lambda node: node
+        self.unpool = lambda node: node
+
+        if direction == "down" and stride is not None:
+            self.pool = BallPooling(dim, stride, dimensionality)
+        elif direction == "up" and stride is not None:
+            self.unpool = BallUnpooling(dim, stride, dimensionality)
+
+    def forward(self, node: Node) -> Node:
+        printd("Erwin transformer blocks:")
+        node = self.unpool(node)
+
+        if (
+            len(self.rotate) > 1 and any(self.rotate)
+        ):
+            assert (
+                node.tree_idx_rot is not None
+            ), "tree_idx_rot must be provided for rotation"
+            tree_idx_rot_inv = torch.argsort(
+                node.tree_idx_rot
+            )  # map from rotated to original
+
+        num_batches = node.batch_idx.max() + 1
+        assert num_batches > 0
+
+        for i, (rotate, blk) in enumerate(zip(self.rotate, self.blocks)):
+            printd(f"{i} ", end="")
+            if rotate:
+                node.x = blk(node.x[node.tree_idx_rot], node.pos[node.tree_idx_rot], num_batches)[
+                    tree_idx_rot_inv
+                ]
+            else:
+                node.x = blk(node.x, node.pos, num_batches)
+
+        return self.pool(node)
+
+
+
+class BasicLayerNSA(nn.Module):
+    def __init__(
+        self,
+        direction: Literal[
+            "down", "up", None
+        ],  # down: encoder, up: decoder, None: bottleneck
+        depth: int,
+        stride: int,
+        dim: int,
+        num_heads: int,
+        ball_size: int,
+        mlp_ratio: int,
+        rotate: bool,
+        msa_type: str = "BallMSA",
+        dimensionality: int = 3,
+        attn_kwargs: dict = {},
+    ):
+        super().__init__()
+
+        self.blocks = nn.ModuleList(
+            [
+                ErwinTransformerBlock(
+                    dim,
+                    num_heads,
+                    ball_size,
+                    mlp_ratio,
+                    dimensionality,
+                    "BallMSA",
                     attn_kwargs,
                 )
                 for _ in range(depth)
             ]
         )
-        if self.attn_kwargs['lastnsa'] or self.attn_kwargs['beginnsa'] or self.attn_kwargs['middlensa']:
-            self.nsa_block = ErwinTransformerBlock(
+        self.rotate_block = nn.ModuleList(
+            [
+                ErwinTransformerBlock(
                     dim,
                     num_heads,
-                    16,
+                    ball_size,
                     mlp_ratio,
-                    "NSAMSA",
                     dimensionality,
+                    msa_type,
                     attn_kwargs,
                 )
-        print(f"self.attn_kwargs.lastnsa: {self.attn_kwargs['lastnsa']}")
-        print(f"self.attn_kwargs.beginnsa: {self.attn_kwargs['beginnsa']}")
-        print(f"self.attn_kwargs.middlensa: {self.attn_kwargs['middlensa']}")
-                
+                for _ in range(depth)
+            ]
+        )
         self.rotate = [i % 2 for i in range(depth)] if rotate else [False] * depth
 
         self.pool = lambda node: node
@@ -610,39 +1113,15 @@ class BasicLayer(nn.Module):
         printd("Erwin transformer blocks:")
         node = self.unpool(node)
 
-
-        if (
-            len(self.rotate) > 1 and self.rotate[1]
-        ):  # if rotation is enabled, it will be used in the second block
-            assert (
-                node.tree_idx_rot is not None
-            ), "tree_idx_rot must be provided for rotation"
-            tree_idx_rot_inv = torch.argsort(
-                node.tree_idx_rot
-            )  # map from rotated to original
-
-        num_batches = node.batch_idx.max() + 1
-        assert num_batches > 0
-
-        if self.attn_kwargs['beginnsa']:
-            node.x = self.nsa_block(node.x, node.pos, num_batches)
-
-        total = len(self.blocks)
-        break_point = total //2
         for i, (rotate, blk) in enumerate(zip(self.rotate, self.blocks)):
-            printd(f"{i} ", end="")
-            if self.attn_kwargs['middlensa'] and i == break_point:
-                node.x = self.nsa_block(node.x, node.pos, num_batches)
+            printd(f"{i} ", end='')
             if rotate:
-                node.x = blk(node.x[node.tree_idx_rot], node.pos[node.tree_idx_rot], num_batches)[
-                    tree_idx_rot_inv
-                ]
+                node.x = self.rotate_block[i](node.x, node.pos)
             else:
-                node.x = blk(node.x, node.pos, num_batches)
+                node.x = blk(node.x, node.pos)
 
-        if self.attn_kwargs['lastnsa']:
-            node.x = self.nsa_block(node.x, node.pos, num_batches)
         return self.pool(node)
+
 
 
 class FullTransformer(nn.Module):
@@ -692,7 +1171,9 @@ class ErwinTransformer(nn.Module):
         dec_depths: List,
         strides: List,
         rotate: int,
-        msa_type: str,
+        msa_type: str = "BallMSA",
+        nsa_type: str | None = None,
+        nsa_loc: str = "last",
         decode: bool = True,
         mlp_ratio: int = 4,
         dimensionality: int = 3,
@@ -704,6 +1185,9 @@ class ErwinTransformer(nn.Module):
         assert len(dec_num_heads) == len(dec_depths) == len(strides)
         assert len(strides) == len(ball_sizes) - 1
 
+        print(f"msa_type = {msa_type}")
+        if nsa_type is not None:
+            print(f"nsa_type = {nsa_type}")
         self.rotate = rotate
         self.decode = decode
         self.ball_sizes = ball_sizes
@@ -718,10 +1202,10 @@ class ErwinTransformer(nn.Module):
 
         print(num_layers)
 
-        print(f"using {msa_type}")
+        if nsa_type == "LucidRains" or msa_type == "LucidRains":
+            for kw, v in get_default_args(LucidRains.__init__).items():
+                print(f"{kw}:", attn_kwargs[kw] if kw in attn_kwargs.keys() else v)
 
-        if msa_type == "LucidRains":
-            print(attn_kwargs)
 
         self.encoder = nn.ModuleList()
         for i in range(num_layers):
@@ -737,6 +1221,8 @@ class ErwinTransformer(nn.Module):
                     mlp_ratio=mlp_ratio,
                     dimensionality=dimensionality,
                     msa_type=msa_type,
+                    nsa_type=nsa_type,
+                    nsa_loc=nsa_loc,
                     attn_kwargs=attn_kwargs,
                 )
             )
@@ -752,6 +1238,8 @@ class ErwinTransformer(nn.Module):
             mlp_ratio=mlp_ratio,
             dimensionality=dimensionality,
             msa_type=msa_type,
+            nsa_type=nsa_type,
+            nsa_loc=nsa_loc,
             attn_kwargs=attn_kwargs,
         )
 
@@ -770,6 +1258,8 @@ class ErwinTransformer(nn.Module):
                         mlp_ratio=mlp_ratio,
                         dimensionality=dimensionality,
                         msa_type=msa_type,
+                        nsa_type=nsa_type,
+                        nsa_loc=nsa_loc,
                         attn_kwargs=attn_kwargs,
                     )
                 )

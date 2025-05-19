@@ -7,7 +7,7 @@ class Positional_Encoder(nn.Module):
         super().__init__()
         self.linear = nn.Linear(dimensionality, num_features // 2, bias=False)
         nn.init.normal_(self.linear.weight, 0.0, 1.0 / sigma)
-        
+
     def forward(self, x):
         proj = self.linear(x)
         return torch.cat([torch.cos(proj), torch.sin(proj)], dim=-1)

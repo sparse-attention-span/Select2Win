@@ -14,7 +14,7 @@ cd experiments
 uv run train_shapenet.py \
     --num-epochs 100000 \
     --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" \
-    --use-wandb 1 \
+    --use-wandb \
     --test 1 \
     --batch-size 2 \
     --msa-type BallMSA \

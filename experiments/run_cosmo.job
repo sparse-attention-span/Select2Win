@@ -1,0 +1,33 @@
+#!/bin/bash
+
+#SBATCH --partition=gpu_h100
+#SBATCH --gpus=1
+#SBATCH --job-name=small_cosmo
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --time=04:00:00
+#SBATCH --output=cosmos_logs/slurm_output_%A.out
+
+source ../erwin/bin/activate
+
+# CUDA_LAUNCH_BLOCKING=1 python train_cosmology.py \
+#     --data-path ../cosmology_data \
+#     --size small \
+#     --num-samples 8192 \
+#     --batch-size 16 \
+#     --num-epochs 3000 \
+#     --msa-type LucidRains \
+#     --experiment sperwin_base \
+#     --config configs/lucidrains_cosmos.yaml
+
+CUDA_LAUNCH_BLOCKING=1 python train_cosmology.py \
+    --data-path ../cosmology_data \
+    --size small \
+    --num-samples 2048 \
+    --batch-size 16 \
+    --num-epochs 3000 \
+    --msa-type BallMSA \
+    --experiment base \
+
+
+# bugs: hardcoded num heads

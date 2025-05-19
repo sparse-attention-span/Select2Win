@@ -17,6 +17,7 @@ from torch.profiler import profile, record_function, ProfilerActivity, tensorboa
 from contextlib import ExitStack
 import pandas as pd
 
+
 def setup_wandb_logging(model, config, project_name="erwin-more-data"):
     wandb.init(
         project=project_name,
@@ -44,7 +45,17 @@ def save_checkpoint(model, optimizer, scheduler, config, val_loss, global_step):
         "val_loss": val_loss,
         "global_step": global_step,
         "config": config,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "scheduler_state_dict": (
+            scheduler.state_dict() if scheduler is not None else None
+        ),
+        "val_loss": val_loss,
+        "global_step": global_step,
+        "config": config,
     }
+
+    save_dir = config.get("checkpoint_dir", "checkpoints")
 
     save_dir = config.get("checkpoint_dir", "checkpoints")
     os.makedirs(save_dir, exist_ok=True)
@@ -54,7 +65,17 @@ def save_checkpoint(model, optimizer, scheduler, config, val_loss, global_step):
             save_dir,
             f"{config['model']}_{config['experiment']}_{config['size']}_{config['seed']}_best.pt",
         )
+
+    if config["model"] in ["erwin", "pointtransformer"]:
+        checkpoint_path = os.path.join(
+            save_dir,
+            f"{config['model']}_{config['experiment']}_{config['size']}_{config['seed']}_best.pt",
+        )
     else:
+        checkpoint_path = os.path.join(
+            save_dir,
+            f"{config['model']}_{config['experiment']}_{config['seed']}_best.pt",
+        )
         checkpoint_path = os.path.join(
             save_dir,
             f"{config['model']}_{config['experiment']}_{config['seed']}_best.pt",
@@ -72,7 +93,18 @@ def load_checkpoint(model, optimizer, scheduler, config):
             save_dir,
             f"{config['model']}_{config['experiment']}_{config['size']}_{config['seed']}_best.pt",
         )
+    save_dir = config.get("checkpoint_dir", "checkpoints")
+    if config["model"] in ["erwin", "pointtransformer"]:
+        checkpoint_path = os.path.join(
+            save_dir,
+            f"{config['model']}_{config['experiment']}_{config['size']}_{config['seed']}_best.pt",
+        )
     else:
+        checkpoint_path = os.path.join(
+            save_dir,
+            f"{config['model']}_{config['experiment']}_{config['seed']}_best.pt",
+        )
+
         checkpoint_path = os.path.join(
             save_dir,
             f"{config['model']}_{config['experiment']}_{config['seed']}_best.pt",
@@ -81,7 +113,15 @@ def load_checkpoint(model, optimizer, scheduler, config):
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"No checkpoint found at {checkpoint_path}")
 
+
     checkpoint = torch.load(checkpoint_path)
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    if scheduler is not None and checkpoint["scheduler_state_dict"] is not None:
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+    return checkpoint["val_loss"], checkpoint["global_step"]
 
     model.load_state_dict(checkpoint["model_state_dict"])
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -95,6 +135,9 @@ def train_step(model, batch, optimizer, scheduler):
     optimizer.zero_grad()
     stat_dict = model.training_step(batch)
     stat_dict["train/loss"].backward()
+
+    # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
     optimizer.step()
     if scheduler is not None:
         scheduler.step()
@@ -107,22 +150,28 @@ def validate(model, val_loader, config):
     val_stats = {}
     num_batches = 0
 
+
     use_tqdm = not config.get("use_wandb", False)
     iterator = tqdm(val_loader, desc="Validation") if use_tqdm else val_loader
+
 
     for batch in iterator:
         batch = {k: v.cuda() for k, v in batch.items()}
         stat_dict = model.validation_step(batch)
+
 
         for k, v in stat_dict.items():
             if k not in val_stats:
                 val_stats[k] = 0
             val_stats[k] += v.cpu().detach()
 
+
         if use_tqdm:
             iterator.set_postfix({"Loss": f"{stat_dict['val/loss'].item():.4f}"})
 
+
         num_batches += 1
+
 
     avg_stats = {f"avg/{k}": v / num_batches for k, v in val_stats.items()}
     return avg_stats
@@ -142,10 +191,12 @@ def fit(
     if config.get("use_wandb", False):
         setup_wandb_logging(model, config)
 
+
     use_tqdm = not config.get("use_wandb", False)
     running_train_stats = {}
     num_train_batches = 0
     global_step = 0
+    best_val_loss = float("inf")
     best_val_loss = float("inf")
     max_steps = config["num_epochs"]
 
@@ -278,10 +329,9 @@ def fit(
             # df = df[keep]
             # df = convert_units(df)
             # print(df)
-            print("Calculating runtime stats.....")
             print(
                 prof.key_averages().table(
-                    sort_by="s            else train_loaderelf_cuda_memory_usage", row_limit=10
+                    sort_by="self_cuda_memory_usage", row_limit=10
                 )
             )
 
