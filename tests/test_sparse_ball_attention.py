@@ -7,12 +7,20 @@ from einops import rearrange
 
 sys.path.append("./")
 from models import ErwinTransformer
-from models.erwin import NSAMSA, BallMSA, LucidRains
+from models.erwin import (
+    NSAMSA,
+    BallMSA,
+    NativelySparseBallAttention,
+    BasicLayer,
+    SpErwinTransformer,
+)
 
 from benchmark.bench_visual_field import compute_specific_grads
 
 
-def generate_point_cloud(n_groups=5, samples_per_group=4, std_dev=0.1, seed=None):
+def generate_point_cloud(
+    n_groups=5, samples_per_group=4, std_dev=0.1, seed=None, angle: float = 0.0
+):
     """
     Generates a 2D point cloud consisting of samples around the roots of z^n_groups = 1.
     """
@@ -32,147 +40,160 @@ def generate_point_cloud(n_groups=5, samples_per_group=4, std_dev=0.1, seed=None
         ]
     )
 
+    # Sample points around roots
     points = []
-    labels = []
-    means = []
 
-    for idx, root in enumerate(roots):
+    for root in roots:
         mean = root.expand(samples_per_group, 2)
         std = torch.full_like(mean, std_dev)
         samples = torch.normal(mean=mean, std=std)
         points.append(samples)
-        labels.extend([idx] * samples_per_group)
-        means.append(mean)
 
+    # Rotate to have nicer balls when doing the ball tree construction
+    rotation_matrix = get_rotation_matrix(angle)
     points = torch.vstack(points)
-    labels = torch.tensor(labels)
-    centers = torch.vstack(means)
+    points = points @ rotation_matrix.T
 
-    rotation_deg = 15
-    theta = torch.deg2rad(torch.tensor(rotation_deg))
+    return points.contiguous(), points.clone().contiguous()
+
+
+def get_rotation_matrix(angle: float) -> torch.Tensor:
+    theta = torch.deg2rad(torch.tensor(angle))
     rotation_matrix = torch.tensor(
         [[torch.cos(theta), -torch.sin(theta)], [torch.sin(theta), torch.cos(theta)]]
     )
-    points = points @ rotation_matrix.T
-    centers = centers @ rotation_matrix.T
+    return rotation_matrix
 
-    return points, labels, centers
+
+def add_model_visual_field(model, x, node_positions, i, ax):
+    jacobian = compute_specific_grads(model, x, i)
+    jacobian = jacobian.detach()
+    thresholded = torch.any(
+        torch.abs(jacobian) > 0, dim=(-2, -1), keepdim=True
+    ).squeeze()
+
+    affected_nodes = node_positions[thresholded]
+
+    # affected NB
+    ax.scatter(node_positions[:, 0], node_positions[:, 1])
+    ax.scatter(
+        affected_nodes[:, 0],
+        affected_nodes[:, 1],
+        color="orange",
+    )
+    ax.scatter(
+        node_positions[i, 0],
+        node_positions[i, 1],
+        marker="x",
+        s=100,
+        color="black",
+        label="Target node",
+    )
 
 
 if __name__ == "__main__":
     from balltree import build_balltree
     import matplotlib.pyplot as plt
-    # device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # seed
+    import random
+    import numpy as np
+
+    SEED = 0
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     EPS = 1e-20
     feature_dim = 2
     pos_dim = 2
-    ball_size = 8
     n_balls = 8
-    num_points = ball_size * n_balls
     std_dev_samples = 0.1
+    sample_angle = 15
+    num_samples = 16
+    ball_size = num_samples
+    num_points = num_samples * n_balls
     num_heads = 1
     topk = 2
     use_diff_topk = False
     thetas = [0]
+    run_unit_tests = True
+
+    assert (num_points > 0) and (
+        (num_points & (num_points - 1)) == 0
+    ), "Num points must be power of 2"
+    assert 1 <= len(thetas) <= 2
 
     i = 0
 
-    node_positions, _, node_features = generate_point_cloud(
-        n_groups=n_balls, samples_per_group=ball_size, std_dev=std_dev_samples
-    )
     batch_idx = torch.repeat_interleave(torch.arange(1), num_points)
+    node_positions, node_features = generate_point_cloud(
+        n_groups=n_balls,
+        samples_per_group=num_samples,
+        std_dev=std_dev_samples,
+        angle=sample_angle,
+    )
+    tree_idx, tree_mask = build_balltree(node_positions, batch_idx)
+    assert tree_mask.all()
+    node_positions = node_positions[tree_idx]
+    node_features = node_features[tree_idx]
+    node_features.requires_grad_(True)
 
     fig, axes = plt.subplots(
-        nrows=len(thetas),
-        ncols=3,
-        figsize=(len(thetas) * 6, 12),
+        nrows=1,
+        ncols=2,
+        figsize=(10, 5),
         sharex=True,
         sharey=True,
     )
 
+    config = {
+        "c_in": feature_dim,
+        "c_hidden": feature_dim,
+        "ball_sizes": [ball_size],
+        "enc_num_heads": [
+            1,
+        ],
+        "enc_depths": [
+            2,
+        ],
+        "dec_num_heads": [],
+        "dec_depths": [],
+        "strides": [],  # no coarsening
+        "mp_steps": 0,  # no MPNN
+        "decode": True,  # no decoder
+        "dimensionality": pos_dim,  # for visualization
+        "rotate": 45,
+    }
 
-    for theta, ax in zip(thetas, axes):
-        print(f"Computing theta={theta}")
-        # model = NSAMSA(
-        #     dim=feature_dim,
-        #     num_heads=num_heads,
-        #     ball_size=ball_size,
-        #     dimensionality=pos_dim,
-        #     topk=topk,
-        #     use_diff_topk=use_diff_topk,
-        # )
-        model = BallMSA(
-            dim=feature_dim,
-            num_heads=num_heads,
-            ball_size=ball_size,
-            dimensionality=pos_dim,
-        )
-        # model = LucidRains(
-        #     dim=feature_dim,
-        #     num_heads=num_heads,
-        #     ball_size=ball_size,
-        #     dimensionality=pos_dim,
-        #     per_ball=False,
-        #     use_flex_attn=False
-        # ).to(device)
+    # Erwin
+    model = ErwinTransformer(**config)
+    add_model_visual_field(
+        lambda x: model(x, node_positions, batch_idx),
+        node_features,
+        node_positions,
+        i,
+        axes[0],
+    )
 
-        tree_idx, tree_mask = build_balltree(node_positions, batch_idx)
-        node_positions = node_positions[tree_idx]
-        node_features = node_features[tree_idx]
-        node_features.requires_grad_(True)
+    # Erwin with NSA
+    model = SpErwinTransformer(**config)
+    add_model_visual_field(
+        lambda x: model(x, node_positions, batch_idx),
+        node_features,
+        node_positions,
+        i,
+        axes[1],
+    )
 
-        def model_wrapper(x: torch.Tensor):
-            out = model(x, node_positions)
-            return out
-
-        # compute FOV of point_1
-        jacobian = compute_specific_grads(model_wrapper, node_features, i).detach()
-        thresholded = torch.any(
-            torch.abs(jacobian) > 0, dim=(-2, -1), keepdim=True
-        ).squeeze()
-
-        affected_nodes = node_positions[thresholded]
-
-        # visualize OG balltree
-        groups = rearrange(node_positions, "(n m) E -> n m E", n=n_balls)
-        colors = plt.cm.get_cmap("tab20", n_balls)
-
-        for group_idx in range(n_balls):
-            points = groups[group_idx]
-            ax[0].scatter(
-                points[:, 0], points[:, 1], color=colors(group_idx), s=50, marker="o"
-            )
-
-        # affected NB
-        ax[1].scatter(node_positions[:, 0], node_positions[:, 1])
-        ax[1].scatter(affected_nodes[:, 0], affected_nodes[:, 1], color="orange")
-
-        # grad norm - normalize values to see differences
-        grad_norms = torch.linalg.matrix_norm(jacobian, dim=(-2, -1))
-        nonzero_grad_idx = grad_norms > 0
-        grad_norms = torch.log10(grad_norms[nonzero_grad_idx] + EPS).cpu().numpy()
-        non_zero_grad_nodes = node_positions[nonzero_grad_idx]
-
-        print(f"{non_zero_grad_nodes.shape[0]} points with non-zero grad")
-        ax[2].scatter(
-            non_zero_grad_nodes[:, 0],
-            non_zero_grad_nodes[:, 1],
-            c=grad_norms,
-            cmap="viridis",
-        )
-
-        for subax in ax:
-            subax.scatter(
-                node_positions[i, 0],
-                node_positions[i, 1],
-                marker="x",
-                s=100,
-                color="black",
-            )
-
-        ax[0].set_title(f"Ball tree theta={theta}")
-        ax[1].set_title("Receptive field")
-        ax[2].set_title("Log-gradient norm")
-
-    plt.savefig("field.png")
+    axes[0].set_title("Receptive field of Erwin")
+    axes[1].set_title("Receptive field of Erwin-NSA")
+    axes[0].legend()
+    plt.yticks([])
+    plt.xticks([])
+    plt.tight_layout()
+    plt.savefig("field.pdf")

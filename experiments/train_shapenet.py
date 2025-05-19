@@ -54,38 +54,8 @@ def parse_args():
                         choices=["", "BallMSA", "NSAMSA", "LucidRains", "NSAMSA_triton"])
     parser.add_argument("--nsa-loc", type=str, default="last")
 
-    # parser.add_argument("--erwintype", type=str, default="normal",
-    #                     choices=["normal", "replacerotate"])
-
-
-
-    # parser.add_argument("--lucidrains-per-ball", type=bool)
-    # parser.add_argument("--lucidrains-gqa", type=bool)
-    # parser.add_argument("--lucidrains-triton-kernel", type=bool)
-    # parser.add_argument("--lucidrains-flex-attn", type=bool)
-
-    # parser.add_argument("--nsamsa-use-diff-topk", type=bool)
-
     return parser.parse_args()
 
-# def get_attn_kwargs(args):
-#     if args.msa_type == "LucidRains":
-#         kwargs =  {
-#             "per_ball": args.lucidrains_per_ball,
-#             "use_flex_attn": args.lucidrains_flex_attn,
-#             "use_triton_impl": args.lucidrains_triton_kernel,
-#             "use_gqa": args.lucidrains_gqa,
-#             "msa_type": args.msa_type
-#         }
-#     if args.msa_type == "NSAMSA":
-#         kwargs = {
-#             "use_diff_topk": args.nsamsa_use_diff_topk,
-#             "msa_type": args.msa_type
-#         }
-#     else:
-#         kwargs = { "msa_type": args.msa_type }
-
-#     return {k: v for k, v in kwargs.items() if v is not None}
 
 erwin_configs = {
     "debug": {
@@ -223,7 +193,11 @@ if __name__ == "__main__":
                 model_config = dict(yaml.safe_load(f))
                 print(model_config)
         else:
-            model_config = erwin_configs[args.size] | {"msa_type": args.msa_type} | {"nsa_type": args.nsa_type} | {"nsa_loc": args.nsa_loc}
+            model_config = erwin_configs[args.size] | {
+                "msa_type": args.msa_type,
+                "nsa_type": args.nsa_type,
+                "nsa_loc": args.nsa_loc
+            }
         # if args.profile:
         #     model_config = erwin_configs["profile"]
     else:

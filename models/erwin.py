@@ -878,10 +878,7 @@ class NSAMSA_triton(nn.Module):
             K=3,
         )
 
-        # print(q.dtype)
-
         topk_values, topk_indices = self.select_balls_mlp(q, k)
-
         topk_indices = topk_indices.contiguous()
 
         q = rearrange(q, "b H n m E -> b H (n m) E").contiguous()
@@ -895,7 +892,6 @@ class NSAMSA_triton(nn.Module):
             topk_values = topk_values[..., 1:]
 
             fmask = (topk_values > 1e-10).contiguous()
-            # print(q.dtype)
             out = native_sparse_attend(
                 q, k, v,
                 self.ball_size,
@@ -909,7 +905,6 @@ class NSAMSA_triton(nn.Module):
             fine_block_mask = fine_selection_flex_mask(topk_indices)
 
             out = flex_attention(q, k, v, block_mask = fine_block_mask)
-        # print(out.dtype)
 
         out = rearrange(out, "b H nm E -> (b nm) (H E)")
         return self.proj(out)
@@ -971,8 +966,6 @@ class BasicLayer(nn.Module):
     ):
         super().__init__()
 
-        print("nsa_loc:", nsa_loc)
-
         if nsa_loc in ("last", "end"):
             nsa_loc = [depth]
         elif nsa_loc in ("middle", "center"):
@@ -983,12 +976,9 @@ class BasicLayer(nn.Module):
             nsa_loc = parse_index_list(nsa_loc, depth)
             nsa_loc = [loc + i for i, loc in enumerate(nsa_loc)]
 
-        print("list:", nsa_loc)
-
         # quick assertion to make sure we aren't sharing attn_kwargs
         if nsa_type is not None:
             assert msa_type == "BallMSA"
-
 
         self.blocks = nn.ModuleList(
             [
@@ -1007,7 +997,6 @@ class BasicLayer(nn.Module):
 
         self.rotate = [i % 2 for i in range(depth)] if rotate else [False] * depth
 
-        # self.nsa_block = None
         if nsa_type is not None:
             assert len(nsa_loc) > 0
             for loc in nsa_loc:
@@ -1032,10 +1021,6 @@ class BasicLayer(nn.Module):
             self.pool = BallPooling(dim, stride, dimensionality)
         elif direction == "up" and stride is not None:
             self.unpool = BallUnpooling(dim, stride, dimensionality)
-
-        print(self.blocks)
-        print("rotate end:", self.rotate)
-        print()
 
     def forward(self, node: Node) -> Node:
         printd("Erwin transformer blocks:")
@@ -1063,8 +1048,6 @@ class BasicLayer(nn.Module):
             else:
                 node.x = blk(node.x, node.pos, num_batches)
 
-        # if self.nsa_block is not None:
-        #     node.x = self.nsa_block(node.x, node.pos, num_batches)
         return self.pool(node)
 
 
