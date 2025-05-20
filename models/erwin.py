@@ -717,14 +717,22 @@ class NSAMSA(nn.Module):
         topk: int = 2,
         use_diff_topk: bool = True,
         selection_ball_size = 16,
+        masks: bool = True,
+        size=16384
     ):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
+        self.mask_block_size = ball_size
         self.ball_size = selection_ball_size
         self.topk = topk
         self.scale = dim**-0.5
         self.use_diff_topk = use_diff_topk
+
+        self.use_masks = masks
+        if masks:
+            diagonal_matrices = [torch.ones((self.mask_block_size, 1), dtype=torch.bool)] * (size//self.mask_block_size)
+            self.attn_mask = nn.Buffer(torch.block_diag(*diagonal_matrices))
 
         self.qkv = nn.Linear(dim, 3 * dim)
         self.proj = nn.Linear(dim, dim)
@@ -777,8 +785,17 @@ class NSAMSA(nn.Module):
         ).squeeze(-1)
         keys = rearrange(keys, "b H km E -> b H E km")
         similarity = queries @ keys
-        _, topk_indices = torch.topk(similarity, self.topk, dim=-1)
+        if self.use_masks:
+            n = keys.shape[-1]
+            nm = queries.shape[-2]
+            mask = self.create_mask(nm, n)
+            similarity = similarity.masked_fill(mask, float('-inf'))
+            # print(f"sim: {similarity}")
+        topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_indices
+    
+    def create_mask(self, nm, n):
+        return self.attn_mask[:nm, :n]
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
         x = x + self.pe_proj(self.compute_rel_to_cloud(pos))
@@ -827,25 +844,33 @@ class NSAMSA_triton(nn.Module):
     def __init__(
         self,
         dim: int,
-        num_heads: int,
+        num_heads: int, # space dim
         ball_size: int,
-        dimensionality: int = 3,
+        dimensionality: int = 3, #feature dim
         topk: int = 2,
         use_diff_topk: bool = True,
         selection_ball_size: int = 16,
         use_flex: bool = False,
         custom_num_heads: int | None = None,
         head_dim_factor: int = 1,
+        masks: bool = True,
+        size=16384
     ):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
+        self.mask_block_size = ball_size
         self.ball_size = selection_ball_size
         self.topk = topk
         self.scale = dim**-0.5
         self.use_diff_topk = use_diff_topk
         self.use_flex = use_flex
         head_dim = dim // num_heads * head_dim_factor
+
+        self.use_masks = masks
+        if masks:
+            diagonal_matrices = [torch.ones((self.mask_block_size, 1), dtype=torch.bool)] * (size//self.mask_block_size)
+            self.attn_mask = nn.Buffer(torch.block_diag(*diagonal_matrices))
 
         self.qkv = nn.Linear(dim, 3 * dim * head_dim_factor)
         self.proj = nn.Linear(dim * head_dim_factor, dim)
@@ -885,26 +910,38 @@ class NSAMSA_triton(nn.Module):
         similarity = queries @ keys
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_indices
+    
+    def create_mask(self, nm, n):
+        return self.attn_mask[:nm, :n]
+
 
     def select_balls_mlp(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
         queries = rearrange(q, "b H n m E -> b H (n m) E")
         keys = self.selection_proj(
             rearrange(k, "b H n m E -> b H n (m E)")
         ).squeeze(-1)
-        keys = rearrange(keys, "b H km E -> b H E km")
-        similarity = queries @ keys
+        keys = rearrange(keys, "b H n E -> b H E n")
+        similarity = queries @ keys # b H (n m) E @ b H E n -> b H (n m) n
+        if self.use_masks:
+            n = keys.shape[-1]
+            nm = queries.shape[-2]
+            mask = self.create_mask(nm, n)
+            similarity = similarity.masked_fill(mask, float('-inf'))
+            print(f"sim: {similarity}")
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
+        print(f"topk indices: {topk_indices}")
         return topk_values, topk_indices
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
-        # Enable asserts to debug NaNs
-        assert not torch.isnan(x).any(), "NaN in inputs!"
-        assert not torch.isinf(x).any(), "Inf in inputs!"
-        assert not torch.isnan(pos).any(), "NaN in pos!"
-        assert not torch.isinf(pos).any(), "Inf in pos!"
+        # # Enable asserts to debug NaNs
+        # assert not torch.isnan(x).any(), "NaN in inputs!"
+        # assert not torch.isinf(x).any(), "Inf in inputs!"
+        # assert not torch.isnan(pos).any(), "NaN in pos!"
+        # assert not torch.isinf(pos).any(), "Inf in pos!"
 
         x = x + self.pe_proj(self.compute_rel_pos(pos))
         qkv = self.qkv(x)
+        print(f"qks: {qkv.shape}")
         q, k, v = repeat(
             qkv,
             "(b n m) (H E K) -> K b H n m E",
@@ -923,11 +960,14 @@ class NSAMSA_triton(nn.Module):
 
         if not self.use_flex:
 
-            topk_values = F.pad(topk_values, (1, 0), value = -1e3)
-            topk_values = topk_values.softmax(dim = -1)
-            topk_values = topk_values[..., 1:]
+            # topk_values = F.pad(topk_values, (1, 0), value = -1e3)
+            # topk_values = topk_values.softmax(dim = -1)
+            # topk_values = topk_values[..., 1:]
 
-            fmask = (topk_values > 1e-10).contiguous()
+
+            # fmask = (topk_values > 1e-10).contiguous()
+            fmask = torch.ones_like(topk_values).bool()
+            assert torch.all(fmask)
             out = native_sparse_attend(
                 q, k, v,
                 self.ball_size,

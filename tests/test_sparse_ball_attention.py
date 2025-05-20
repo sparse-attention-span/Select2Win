@@ -8,11 +8,9 @@ from einops import rearrange
 sys.path.append("./")
 from models import ErwinTransformer
 from models.erwin import (
-    NSAMSA,
+    NSAMSA_triton,
     BallMSA,
-    NativelySparseBallAttention,
-    BasicLayer,
-    SpErwinTransformer,
+    NSAMSA
 )
 
 from benchmark.bench_visual_field import compute_specific_grads
@@ -69,21 +67,21 @@ def add_model_visual_field(model, x, node_positions, i, ax):
     jacobian = compute_specific_grads(model, x, i)
     jacobian = jacobian.detach()
     thresholded = torch.any(
-        torch.abs(jacobian) > 0, dim=(-2, -1), keepdim=True
+        torch.abs(jacobian) > 0.00005, dim=(-2, -1), keepdim=True
     ).squeeze()
 
-    affected_nodes = node_positions[thresholded]
+    affected_nodes = node_positions[thresholded].cpu()
 
     # affected NB
-    ax.scatter(node_positions[:, 0], node_positions[:, 1])
+    ax.scatter(node_positions[:, 0].cpu(), node_positions[:, 1].cpu())
     ax.scatter(
         affected_nodes[:, 0],
         affected_nodes[:, 1],
         color="orange",
     )
     ax.scatter(
-        node_positions[i, 0],
-        node_positions[i, 1],
+        node_positions[i, 0].cpu(),
+        node_positions[i, 1].cpu(),
         marker="x",
         s=100,
         color="black",
@@ -99,7 +97,8 @@ if __name__ == "__main__":
     import random
     import numpy as np
 
-    SEED = 0
+    # SEED = 2818923
+    SEED = 303489
     random.seed(SEED)
     np.random.seed(SEED)
     torch.manual_seed(SEED)
@@ -139,8 +138,8 @@ if __name__ == "__main__":
     )
     tree_idx, tree_mask = build_balltree(node_positions, batch_idx)
     assert tree_mask.all()
-    node_positions = node_positions[tree_idx]
-    node_features = node_features[tree_idx]
+    node_positions = node_positions[tree_idx].to(device='cuda:0')
+    node_features = node_features[tree_idx].to(device='cuda:0')
     node_features.requires_grad_(True)
 
     fig, axes = plt.subplots(
@@ -151,49 +150,67 @@ if __name__ == "__main__":
         sharey=True,
     )
 
+    # dim: int,
+    #     num_heads: int, # space dim
+    #     ball_size: int,
+    #     dimensionality: int = 3, #feature dim
+    #     topk: int = 2,
+    #     use_diff_topk: bool = True,
+    #     selection_ball_size: int = 16,
+    #     use_flex: bool = False,
+    #     custom_num_heads: int | None = None,
+    #     head_dim_factor: int = 1,
+    #     masks: bool = True,
+    #     size=16384
     config = {
-        "c_in": feature_dim,
-        "c_hidden": feature_dim,
-        "ball_sizes": [ball_size],
-        "enc_num_heads": [
-            1,
-        ],
-        "enc_depths": [
-            2,
-        ],
-        "dec_num_heads": [],
-        "dec_depths": [],
-        "strides": [],  # no coarsening
-        "mp_steps": 0,  # no MPNN
-        "decode": True,  # no decoder
+        "dim": feature_dim,
+        "num_heads": num_heads,
         "dimensionality": pos_dim,  # for visualization
-        "rotate": 45,
+        "ball_size": num_samples,
+        "selection_ball_size": 16
+    }
+
+    configBall = {
+        "dim": feature_dim,
+        "num_heads": num_heads,
+        "dimensionality": pos_dim,  # for visualization
+        "ball_size": num_samples
     }
 
     # Erwin
-    model = ErwinTransformer(**config)
+    # model = BallMSA(**configBall).to(device='cuda:0')
+    # add_model_visual_field(
+    #     lambda x: model(x, node_positions, batch_idx),
+    #     node_features,
+    #     node_positions,
+    #     i,
+    #     axes[0],
+    # )
+
+    # Erwin with NSA
+    model = NSAMSA_triton(**config).to(device='cuda:0')
     add_model_visual_field(
-        lambda x: model(x, node_positions, batch_idx),
+        lambda x: model(x, node_positions, 1),
         node_features,
         node_positions,
         i,
         axes[0],
     )
 
-    # Erwin with NSA
-    model = SpErwinTransformer(**config)
+    model = NSAMSA(**config).to(device='cuda:0')
     add_model_visual_field(
-        lambda x: model(x, node_positions, batch_idx),
+        lambda x: model(x, node_positions, 1),
         node_features,
         node_positions,
         i,
         axes[1],
     )
 
-    axes[0].set_title("Receptive field of Erwin")
-    axes[1].set_title("Receptive field of Erwin-NSA")
+
+    axes[0].set_title("Receptive field of triton")
+    axes[1].set_title("Receptive field of pytorch")
     axes[0].legend()
     plt.yticks([])
     plt.xticks([])
     plt.tight_layout()
-    plt.savefig("field.pdf")
+    plt.savefig("field.png")

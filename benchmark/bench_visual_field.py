@@ -8,7 +8,7 @@ from models import ErwinTransformer
 
 
 def compute_specific_grads(
-    model: nn.Module, x: torch.Tensor, i: int, j: int | None = None
+    model: nn.Module, x: torch.Tensor, i: int
 ) -> torch.Tensor:
     """
     Computes Jacobian d(out_j)/dx_i of output of model with respect to input.
@@ -30,15 +30,12 @@ def compute_specific_grads(
     device = x.device
     n_prime, d_prime = out.shape
 
-    if j_is_set := j is not None:
-        jacobian_shape = (d_prime, d)
-    else:
-        jacobian_shape = (n_prime, d_prime, d)
+    jacobian_shape = (n_prime, d_prime, d)
 
     jacobian = torch.zeros(jacobian_shape, device=device)
-    output_iter = [j] if j_is_set else range(n_prime)
+    # output_iter = [j] if j_is_set else range(n_prime)
 
-    for j_prime in output_iter:
+    for j_prime in range(n_prime):
         for k in range(d_prime):
             # compute jacobian by computing each row d(out[j', k]/dx_i)
             # this is to prevent using jacobian function of PyTorch, which
@@ -49,10 +46,8 @@ def compute_specific_grads(
             out[j_prime, k].backward(retain_graph=True)
             grad_i = x.grad[i].detach().clone()
 
-            if j_is_set:
-                jacobian[k] = grad_i
-            else:
-                jacobian[j_prime, k, :] = grad_i
+            print(f"j_prime: {j_prime}, k: {k}, grad: {grad_i}")
+            jacobian[j_prime, k, :] = grad_i
 
     return jacobian
 
