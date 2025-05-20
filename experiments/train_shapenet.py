@@ -53,6 +53,7 @@ def parse_args():
     parser.add_argument("--nsa-type", type=str, default="",
                         choices=["", "BallMSA", "NSAMSA", "LucidRains", "FullAttention"])
     parser.add_argument("--nsa-loc", type=str, default="last")
+    parser.add_argument("--no-triton", action="store_true", help="use only with nsamsa")
 
     return parser.parse_args()
 
@@ -196,7 +197,8 @@ if __name__ == "__main__":
             model_config = erwin_configs[args.size] | {
                 "msa_type": args.msa_type,
                 "nsa_type": args.nsa_type,
-                "nsa_loc": args.nsa_loc
+                "nsa_loc": args.nsa_loc,
+                "attn_kwargs": { "implementation": "pytorch" } if args.no_triton else {}
             }
         # if args.profile:
         #     model_config = erwin_configs["profile"]
