@@ -903,6 +903,12 @@ class NSAMSA_triton(nn.Module):
         pos = pos - pos.mean(dim=1, keepdim=True)
         return rearrange(pos, "n m E -> (n m) E")
         # return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
+        
+    @torch.no_grad()
+    def compute_rel_to_cloud(self, pos: torch.Tensor, num_batches: int):
+        """Relative position of leafs wrt the center of the pointcloud (eq. 9)."""
+        pos = rearrange(pos, "(b n) E -> b n E", b=num_batches)
+        return pos - pos.mean(dim=1, keepdim=True)
 
     @torch.no_grad()
     def select_balls_mean(
@@ -942,12 +948,12 @@ class NSAMSA_triton(nn.Module):
         # assert not torch.isnan(pos).any(), "NaN in pos!"
         # assert not torch.isinf(pos).any(), "Inf in pos!"
 
-        x = x + self.pe_proj(self.compute_rel_pos(pos))
+        x = rearrange(x, "(b n) E -> b n E", b=num_batches)
+        x = x + self.pe_proj(self.compute_rel_to_cloud(pos, num_batches))
         qkv = self.qkv(x)
-        print(f"qks: {qkv.shape}")
-        q, k, v = repeat(
+        q, k, v = rearrange(
             qkv,
-            "(b n m) (H E K) -> K b H n m E",
+            "b (n m) (H E K) -> K b H n m E",
             b=num_batches,
             H=self.num_heads,
             m=self.selection_ball_size,
