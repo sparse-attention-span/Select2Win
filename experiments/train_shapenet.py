@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument("--msa-type", type=str, default="BallMSA",
                         choices=["BallMSA", "NSAMSA", "LucidRains"])
     parser.add_argument("--nsa-type", type=str, default="",
-                        choices=["", "BallMSA", "NSAMSA", "LucidRains", "NSAMSA_triton"])
+                        choices=["", "BallMSA", "NSAMSA", "LucidRains", "NSAMSA_triton", "FullAttention"])
     parser.add_argument("--nsa-loc", type=str, default="last")
 
     return parser.parse_args()

@@ -677,27 +677,28 @@ class LucidRainsMinimal_buggy(nn.Module):
 class FullAttention(nn.Module):
     """Full attention module."""
 
-    def __init__(self, dim: int, num_heads: int):
+    def __init__(self, dim: int, num_heads: int, ball_size, dimensionality:int, *args, **kwargs):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
-        self.scale = dim**-0.5
 
         self.qkv = nn.Linear(dim, 3 * dim)
         self.proj = nn.Linear(dim, dim)
+        self.pe_proj = nn.Linear(dimensionality, dim)
         
     @torch.no_grad()
-    def compute_rel_to_cloud(self, pos: torch.Tensor):
+    def compute_rel_to_cloud(self, pos: torch.Tensor, num_batches: int):
         """Relative position of leafs wrt the center of the pointcloud (eq. 9)."""
+        pos = rearrange(pos, "(b n) E -> b n E", b=num_batches)
         return pos - pos.mean(dim=1, keepdim=True)
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
-        x = x + self.pe_proj(self.compute_rel_to_cloud(pos))
+        x = rearrange(x, "(b n) E -> b n E", b=num_batches)
+        x = x + self.pe_proj(self.compute_rel_to_cloud(pos, num_batches))
         qkv = self.qkv(x)
-        q, k, v = repeat(
+        q, k, v = rearrange(
             qkv,
-            "(b n) (H E K) -> K b H n E",
-            b=num_batches,
+            "b n (H E K) -> K b H n E",
             H=self.num_heads,
             K=3,
         )
@@ -766,7 +767,7 @@ class NSAMSA(nn.Module):
         queries = rearrange(q, "b H n m E -> b H (n m) E")
         keys = reduce(k, "b H n m E -> b H E n", "mean")
         similarity = queries @ keys
-        topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
+        _, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_indices
 
     def select_balls_mlp(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
@@ -776,7 +777,7 @@ class NSAMSA(nn.Module):
         ).squeeze(-1)
         keys = rearrange(keys, "b H km E -> b H E km")
         similarity = queries @ keys
-        topk_indices = torch.topk(similarity, self.topk, dim=-1)
+        _, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_indices
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
@@ -968,6 +969,7 @@ class ErwinTransformerBlock(nn.Module):
             "NSAMSA": NSAMSA,
             "LucidRains": LucidRainsMinimal,
             "NSAMSA_triton": NSAMSA_triton,
+            "FullAttention": FullAttention,
         }[msa_type]
 
         self.BMSA = MSABase(
