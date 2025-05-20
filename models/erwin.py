@@ -674,6 +674,36 @@ class LucidRainsMinimal_buggy(nn.Module):
         x = x.squeeze(0)
         return x
 
+class FullAttention(nn.Module):
+    """Full attention module."""
+
+    def __init__(self, dim: int, num_heads: int):
+        super().__init__()
+        self.dim = dim
+        self.num_heads = num_heads
+        self.scale = dim**-0.5
+
+        self.qkv = nn.Linear(dim, 3 * dim)
+        self.proj = nn.Linear(dim, dim)
+        
+    @torch.no_grad()
+    def compute_rel_to_cloud(self, pos: torch.Tensor):
+        """Relative position of leafs wrt the center of the pointcloud (eq. 9)."""
+        return pos - pos.mean(dim=1, keepdim=True)
+
+    def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
+        x = x + self.pe_proj(self.compute_rel_to_cloud(pos))
+        qkv = self.qkv(x)
+        q, k, v = repeat(
+            qkv,
+            "(b n) (H E K) -> K b H n E",
+            b=num_batches,
+            H=self.num_heads,
+            K=3,
+        )
+        out = F.scaled_dot_product_attention(q, k, v)
+        out = rearrange(out, "b h n e -> (b n) (h e)")
+        return self.proj(out)
 class NSAMSA(nn.Module):
     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
 
@@ -725,6 +755,11 @@ class NSAMSA(nn.Module):
         # return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
 
     @torch.no_grad()
+    def compute_rel_to_cloud(self, pos: torch.Tensor):
+        """Relative position of leafs wrt the center of the pointcloud (eq. 9)."""
+        return pos - pos.mean(dim=1, keepdim=True)
+
+    @torch.no_grad()
     def select_balls_mean(
         self, q: torch.Tensor, k: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -741,11 +776,11 @@ class NSAMSA(nn.Module):
         ).squeeze(-1)
         keys = rearrange(keys, "b H km E -> b H E km")
         similarity = queries @ keys
-        topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
+        topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_indices
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
-        x = x + self.pe_proj(self.compute_rel_pos(pos))
+        x = x + self.pe_proj(self.compute_rel_to_cloud(pos))
         qkv = self.qkv(x)
         q, k, v = repeat(
             qkv,
