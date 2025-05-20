@@ -8,46 +8,38 @@ from models import ErwinTransformer
 
 
 def compute_specific_grads(
-    model: nn.Module, x: torch.Tensor, i: int
+    model: nn.Module, x: torch.Tensor, target_idx: int
 ) -> torch.Tensor:
     """
-    Computes Jacobian d(out_j)/dx_i of output of model with respect to input.
+    Computes Jacobian d(out_target)/dx_i of output of model with respect to input.
 
     Arguments:
-        model: nn.Module model mapping a (n, d) tensor to a (n, d') tensor
+        model: nn.Module model mapping a (n, d) tensor to a (n, d) tensor
         x: tensor of shape (n, d) with grads enabled
-        i: i-th datapoint for which the gradients will be computed
-        j: j-th output point as target fn. If set to None, computes for all outputs.
+        target: output of d(out_target)/dx_i
 
     Returns:
-        If j is specified:
-            (d, d') tensor containig the Jacobian d(out_j)/dx_i
-        Otherwise:
-            (n, d, d') tensor containing Jacobians d(out_j)/dx_i for each output point j
+            (n, d, d') tensor containing Jacobians d(out_target)/dx_i for each input point i
     """
+    assert x.requires_grad
+
     out = model(x)
     n, d = x.shape
     device = x.device
-    n_prime, d_prime = out.shape
+    jacobian = torch.zeros((n, d, d), device=device)
 
-    jacobian_shape = (n_prime, d_prime, d)
+    for k in range(d):
+        # compute jacobian d(out[target, k] / dx_i)
+        # this is to prevent using jacobian function of PyTorch, which
+        # computes unnecessarily many gradients.
+        if x.grad is not None:
+            x.grad.zero_()
 
-    jacobian = torch.zeros(jacobian_shape, device=device)
-    # output_iter = [j] if j_is_set else range(n_prime)
+        out[target_idx, k].backward(retain_graph=True)
 
-    for j_prime in range(n_prime):
-        for k in range(d_prime):
-            # compute jacobian by computing each row d(out[j', k]/dx_i)
-            # this is to prevent using jacobian function of PyTorch, which
-            # computes unnecessarily many gradients
-            if x.grad is not None:
-                x.grad.zero_()
-
-            out[j_prime, k].backward(retain_graph=True)
-            grad_i = x.grad[i].detach().clone()
-
-            print(f"j_prime: {j_prime}, k: {k}, grad: {grad_i}")
-            jacobian[j_prime, k, :] = grad_i
+        for j in range(n):
+            jacobian[j, k, :] = x.grad[j].detach()
+            print(f"j: {j}, k: {k}, grad: {jacobian[j, k, :]}")
 
     return jacobian
 

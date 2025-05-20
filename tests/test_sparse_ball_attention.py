@@ -7,11 +7,7 @@ from einops import rearrange
 
 sys.path.append("./")
 from models import ErwinTransformer
-from models.erwin import (
-    NSAMSA_triton,
-    BallMSA,
-    NSAMSA
-)
+from models.erwin import NSAMSA_triton, BallMSA, NSAMSA
 
 from benchmark.bench_visual_field import compute_specific_grads
 
@@ -107,6 +103,8 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     EPS = 1e-20
     feature_dim = 2
     pos_dim = 2
@@ -138,8 +136,8 @@ if __name__ == "__main__":
     )
     tree_idx, tree_mask = build_balltree(node_positions, batch_idx)
     assert tree_mask.all()
-    node_positions = node_positions[tree_idx].to(device='cuda:0')
-    node_features = node_features[tree_idx].to(device='cuda:0')
+    node_positions = node_positions[tree_idx].to(device)
+    node_features = node_features[tree_idx].to(device)
     node_features.requires_grad_(True)
 
     fig, axes = plt.subplots(
@@ -167,18 +165,20 @@ if __name__ == "__main__":
         "num_heads": num_heads,
         "dimensionality": pos_dim,  # for visualization
         "ball_size": num_samples,
-        "selection_ball_size": 16
+        "selection_ball_size": 16,
+        "topk": 3,
+        "masks": True,
     }
 
     configBall = {
         "dim": feature_dim,
         "num_heads": num_heads,
         "dimensionality": pos_dim,  # for visualization
-        "ball_size": num_samples
+        "ball_size": num_samples,
     }
 
     # Erwin
-    # model = BallMSA(**configBall).to(device='cuda:0')
+    # model = BallMSA(**configBall).to(device)
     # add_model_visual_field(
     #     lambda x: model(x, node_positions, batch_idx),
     #     node_features,
@@ -188,16 +188,16 @@ if __name__ == "__main__":
     # )
 
     # Erwin with NSA
-    model = NSAMSA_triton(**config).to(device='cuda:0')
-    add_model_visual_field(
-        lambda x: model(x, node_positions, 1),
-        node_features,
-        node_positions,
-        i,
-        axes[0],
-    )
+    # model = NSAMSA_triton(**config).to(device)
+    # add_model_visual_field(
+    #     lambda x: model(x, node_positions, 1),
+    #     node_features,
+    #     node_positions,
+    #     i,
+    #     axes[0],
+    # )
 
-    model = NSAMSA(**config).to(device='cuda:0')
+    model = NSAMSA(**config).to(device)
     add_model_visual_field(
         lambda x: model(x, node_positions, 1),
         node_features,
@@ -205,7 +205,6 @@ if __name__ == "__main__":
         i,
         axes[1],
     )
-
 
     axes[0].set_title("Receptive field of triton")
     axes[1].set_title("Receptive field of pytorch")
