@@ -725,14 +725,14 @@ class NSAMSA(nn.Module):
         self.dim = dim
         self.num_heads = num_heads
         self.mask_block_size = ball_size
-        self.ball_size = selection_ball_size
+        self.selection_ball_size = selection_ball_size
         self.topk = topk
         self.scale = dim**-0.5
         self.use_diff_topk = use_diff_topk
 
         self.use_masks = masks
         if masks:
-            diagonal_matrices = [torch.ones((self.mask_block_size, self.mask_block_size//self.ball_size), dtype=torch.bool)] * self.mask_block_size
+            diagonal_matrices = [torch.ones((self.mask_block_size, self.mask_block_size//self.selection_ball_size), dtype=torch.bool)] * self.mask_block_size
             self.attn_mask = nn.Buffer(torch.block_diag(*diagonal_matrices))
 
         self.qkv = nn.Linear(dim, 3 * dim)
@@ -751,15 +751,15 @@ class NSAMSA(nn.Module):
     @torch.no_grad()
     def create_attention_mask(self, pos: torch.Tensor):
         """Distance-based attention bias (eq. 10)."""
-        pos = rearrange(pos, "(n m) d -> n m d", m=self.ball_size)
+        pos = rearrange(pos, "(n m) d -> n m d", m=self.selection_ball_size)
         return self.sigma_att * torch.cdist(pos, pos, p=2).unsqueeze(1)
 
     @torch.no_grad()
     def compute_rel_pos(self, pos: torch.Tensor):
         """Relative position of leafs wrt the center of the ball (eq. 9)."""
-        pos = rearrange(pos, "(n m) E -> n m E", m=self.ball_size)
-        # num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
-        # pos = pos.view(num_balls, self.ball_size, dim)
+        pos = rearrange(pos, "(n m) E -> n m E", m=self.selection_ball_size)
+        # num_balls, dim = pos.shape[0] // self.selection_ball_size, pos.shape[1]
+        # pos = pos.view(num_balls, self.selection_ball_size, dim)
         pos = pos - pos.mean(dim=1, keepdim=True)
         return rearrange(pos, "n m E -> (n m) E")
         # return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
@@ -808,7 +808,7 @@ class NSAMSA(nn.Module):
             "b (n m) (H E K) -> K b H n m E",
             b=num_batches,
             H=self.num_heads,
-            m=self.ball_size,
+            m=self.selection_ball_size,
             K=3,
         )
         # tensor are of shape b h (n m) topk
@@ -821,7 +821,7 @@ class NSAMSA(nn.Module):
         topk_indices = repeat(
             topk_indices,
             "b H nm topk -> b H nm topk m E",
-            m=self.ball_size,
+            m=self.selection_ball_size,
             E=v.shape[-1],
         )
 
@@ -863,7 +863,7 @@ class NSAMSA_triton(nn.Module):
         self.dim = dim
         self.num_heads = num_heads
         self.mask_block_size = ball_size
-        self.ball_size = selection_ball_size
+        self.selection_ball_size = selection_ball_size
         self.topk = topk
         self.scale = dim**-0.5
         self.use_diff_topk = use_diff_topk
@@ -872,7 +872,7 @@ class NSAMSA_triton(nn.Module):
 
         self.use_masks = masks
         if masks:
-            diagonal_matrices = [torch.ones((self.mask_block_size, self.mask_block_size//self.ball_size), dtype=torch.bool)] * self.mask_block_size
+            diagonal_matrices = [torch.ones((self.mask_block_size, self.mask_block_size//self.selection_ball_size), dtype=torch.bool)] * self.mask_block_size
             self.attn_mask = nn.Buffer(torch.block_diag(*diagonal_matrices))
 
         self.qkv = nn.Linear(dim, 3 * dim * head_dim_factor)
@@ -891,15 +891,15 @@ class NSAMSA_triton(nn.Module):
     @torch.no_grad()
     def create_attention_mask(self, pos: torch.Tensor):
         """Distance-based attention bias (eq. 10)."""
-        pos = rearrange(pos, "(n m) d -> n m d", m=self.ball_size)
+        pos = rearrange(pos, "(n m) d -> n m d", m=self.selection_ball_size)
         return self.sigma_att * torch.cdist(pos, pos, p=2).unsqueeze(1)
 
     @torch.no_grad()
     def compute_rel_pos(self, pos: torch.Tensor):
         """Relative position of leafs wrt the center of the ball (eq. 9)."""
-        pos = rearrange(pos, "(n m) E -> n m E", m=self.ball_size)
-        # num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
-        # pos = pos.view(num_balls, self.ball_size, dim)
+        pos = rearrange(pos, "(n m) E -> n m E", m=self.selection_ball_size)
+        # num_balls, dim = pos.shape[0] // self.selection_ball_size, pos.shape[1]
+        # pos = pos.view(num_balls, self.selection_ball_size, dim)
         pos = pos - pos.mean(dim=1, keepdim=True)
         return rearrange(pos, "n m E -> (n m) E")
         # return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
@@ -950,7 +950,7 @@ class NSAMSA_triton(nn.Module):
             "(b n m) (H E K) -> K b H n m E",
             b=num_batches,
             H=self.num_heads,
-            m=self.ball_size,
+            m=self.selection_ball_size,
             K=3,
         )
 
@@ -973,14 +973,14 @@ class NSAMSA_triton(nn.Module):
             assert torch.all(fmask)
             out = native_sparse_attend(
                 q, k, v,
-                self.ball_size,
+                self.selection_ball_size,
                 topk_indices,
                 fmask,
                 include_block_causal = False
             )
 
         else:
-            fine_selection_flex_mask = create_fine_mask(q.shape[2], self.ball_size)
+            fine_selection_flex_mask = create_fine_mask(q.shape[2], self.selection_ball_size)
             fine_block_mask = fine_selection_flex_mask(topk_indices)
 
             out = flex_attention(q, k, v, block_mask = fine_block_mask)
