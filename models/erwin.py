@@ -872,7 +872,7 @@ class NSAMSA_triton(nn.Module):
 
         self.use_masks = masks
         if masks:
-            diagonal_matrices = [torch.ones((self.mask_block_size, 1), dtype=torch.bool)] * (size//self.mask_block_size)
+            diagonal_matrices = [torch.ones((self.mask_block_size, self.mask_block_size//self.ball_size), dtype=torch.bool)] * self.mask_block_size
             self.attn_mask = nn.Buffer(torch.block_diag(*diagonal_matrices))
 
         self.qkv = nn.Linear(dim, 3 * dim * head_dim_factor)
