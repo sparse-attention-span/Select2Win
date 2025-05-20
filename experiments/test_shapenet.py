@@ -4,7 +4,6 @@ sys.path.append("../../")
 sys.path.append("../")
 
 import argparse
-import yaml
 import torch
 
 torch.set_float32_matmul_precision("high")
@@ -12,7 +11,7 @@ from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from erwin.training import fit
+from erwin.testing import fit
 from erwin.models.erwin import ErwinTransformer
 from erwin.experiments.datasets import ShapenetCarDataset
 from erwin.experiments.wrappers import ShapenetCarModel
@@ -29,18 +28,17 @@ def parse_args():
         choices=("mpnn", "pointtransformer", "pointnetpp", "erwin"),
     )
     parser.add_argument("--data-path", type=str, default="../shapenet_car/preprocessed")
-    parser.add_argument("--config", type=str, default="")
-    parser.add_argument("--size", type=str, default="small",
-                        choices=('small', 'medium', 'large', 'debug'))
+    parser.add_argument("--size", type=str, default="small", 
+                        choices=('small', 'medium', 'large'))
     parser.add_argument("--num-epochs", type=int, default=100000)
     parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--use-wandb", action="store_true")
+    parser.add_argument("--use-wandb", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--val-every-iter", type=int, default=100,
                         help="Validation frequency")
     parser.add_argument("--experiment", type=str, default="shapenet",
                         help="Experiment name in wandb")
-    parser.add_argument("--test", action="store_true", default=0)
+    parser.add_argument("--test", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--knn", type=int, default=8)
     parser.add_argument(
@@ -50,26 +48,45 @@ def parse_args():
     )
     parser.add_argument("--msa-type", type=str, default="BallMSA",
                         choices=["BallMSA", "NSAMSA", "LucidRains"])
-    parser.add_argument("--nsa-type", type=str, default="",
-                        choices=["", "BallMSA", "NSAMSA", "LucidRains", "FullAttention"])
-    parser.add_argument("--nsa-loc", type=str, default="last")
+
+    parser.add_argument("--lucidrains-per-ball", action='store_true')
+    parser.add_argument("--lucidrains-gqa", action='store_true')
+    parser.add_argument("--lucidrains-triton-kernel", action='store_true')
+    parser.add_argument("--lucidrains-flex-attn", action='store_true')
+
+    parser.add_argument("--nsamsa-use-diff-topk", action='store_true')
+    parser.add_argument("--lastnsa", action='store_true')
+    parser.add_argument("--beginnsa", action='store_true')
+    parser.add_argument("--middlensa", action='store_true')
+    parser.add_argument("--checkpoint", action='store_true')
 
     return parser.parse_args()
 
+def get_attn_kwargs(args):
+    if args.msa_type == "LucidRains":
+        kwargs =  {
+            "per_ball": args.lucidrains_per_ball,
+            "use_flex_attn": args.lucidrains_flex_attn,
+            "use_triton_impl": args.lucidrains_triton_kernel,
+            "use_gqa": args.lucidrains_gqa,
+            "lastnsa": args.lastnsa,
+            "middlensa": args.middlensa,
+            "beginnsa": args.beginnsa,
+        }
+    elif args.msa_type == "NSAMSA":
+        kwargs = {
+            "use_diff_topk": args.nsamsa_use_diff_topk,
+            "lastnsa": False,
+            "middlensa": False,
+            "beginnsa": False,
+        }
+    else:
+        kwargs = {"lastnsa": args.lastnsa, "middlensa": args.middlensa,
+            "beginnsa": args.beginnsa,}
+
+    return kwargs
 
 erwin_configs = {
-    "debug": {
-        "c_in": 64,
-        "c_hidden": 64,
-        "ball_sizes": [128, 128],
-        "enc_num_heads": [4, 4],
-        "enc_depths": [6, 6],
-        "dec_num_heads": [4],
-        "dec_depths": [6],
-        "strides": [1],
-        "rotate": 45,
-        "mp_steps": 3,
-    },
     "profile": {
         "c_in": 64,
         "c_hidden": 64,
@@ -134,9 +151,6 @@ if __name__ == "__main__":
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
 
     train_dataset = ShapenetCarDataset(
         data_path=args.data_path,
@@ -160,10 +174,8 @@ if __name__ == "__main__":
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        drop_last=True,
         collate_fn=train_dataset.collate_fn,
         num_workers=args.batch_size,
-        persistent_workers=True,
     )
 
     valid_loader = DataLoader(
@@ -172,7 +184,6 @@ if __name__ == "__main__":
         shuffle=False,
         collate_fn=train_dataset.collate_fn,
         num_workers=args.batch_size,
-        persistent_workers=True,
     )
 
     test_loader = DataLoader(
@@ -181,46 +192,32 @@ if __name__ == "__main__":
         shuffle=False,
         collate_fn=train_dataset.collate_fn,
         num_workers=args.batch_size,
-        persistent_workers=True,
     )
 
-    if args.nsa_type == "":
-        args.nsa_type = None
-
     if args.model == "erwin":
-        if args.config:
-            with open(f"{args.config}", "r") as f:
-                model_config = dict(yaml.safe_load(f))
-                print(model_config)
-        else:
-            model_config = erwin_configs[args.size] | {
-                "msa_type": args.msa_type,
-                "nsa_type": args.nsa_type,
-                "nsa_loc": args.nsa_loc
-            }
-        # if args.profile:
-        #     model_config = erwin_configs["profile"]
+        model_config = erwin_configs[args.size]
     else:
         raise NotImplementedError(f"Unknown model: {args.model}")
 
-    main_model = model_cls[args.model](**model_config)
+    model_config["msa_type"] = args.msa_type
+
+    attn_kwargs=get_attn_kwargs(args)
+    print(f"attn_kwargs.lastnsa {attn_kwargs['lastnsa']}")
+    print(f"attn_kwargs.middlensa {attn_kwargs['middlensa']}")
+    print(f"attn_kwargs.beginnsa {attn_kwargs['beginnsa']}")
+    main_model = model_cls[args.model](**model_config, attn_kwargs=attn_kwargs)
     model = ShapenetCarModel(main_model).cuda()
     model = torch.compile(model)
 
-    print(f"lr: {args.lr}")
     optimizer = AdamW(model.parameters(), lr=args.lr)
-    # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=5e-5)
 
     config = vars(args)
     config.update(model_config)
-    print(f"config msa_type: {config['msa_type']}")
     num_epochs = args.num_epochs
 
     if args.profile:
         gc.collect()
-
-    # torch.autograd.set_detect_anomaly(True)
     # Run the training
     fit(
         config,

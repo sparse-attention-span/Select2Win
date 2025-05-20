@@ -266,7 +266,7 @@ class BallMSA(nn.Module):
     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
 
     def __init__(
-        self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3
+        self, dim: int, num_heads: int, ball_size: int, dimensionality: int = 3, lastnsa=False, beginnsa=False, middlensa=False
     ):
         super().__init__()
         self.dim = dim
@@ -674,116 +674,6 @@ class LucidRainsMinimal_buggy(nn.Module):
         x = x.squeeze(0)
         return x
 
-# class NSAMSA(nn.Module):
-#     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
-
-#     def __init__(
-#         self,
-#         dim: int,
-#         num_heads: int,
-#         ball_size: int,
-#         dimensionality: int = 3,
-#         topk: int = 2,
-#         use_diff_topk: bool = True,
-#         selection_ball_size = 16,
-#     ):
-#         super().__init__()
-#         self.dim = dim
-#         self.num_heads = num_heads
-#         self.ball_size = selection_ball_size
-#         self.topk = topk
-#         self.scale = dim**-0.5
-#         self.use_diff_topk = use_diff_topk
-
-#         self.qkv = nn.Linear(dim, 3 * dim)
-#         self.proj = nn.Linear(dim, dim)
-#         self.pe_proj = nn.Linear(dimensionality, dim)
-
-#         self.selection_proj = nn.Linear(selection_ball_size * dim // num_heads, dim // num_heads)
-#         from einops.layers.torch import Rearrange
-
-#         # self.qkv = nn.Identity()
-#         # self.proj = nn.Identity()
-#         # self.pe_proj = nn.Identity()
-
-#         self.sigma_att = nn.Parameter(-1 + 0.01 * torch.randn((1, num_heads, 1, 1)))
-
-#     @torch.no_grad()
-#     def create_attention_mask(self, pos: torch.Tensor):
-#         """Distance-based attention bias (eq. 10)."""
-#         pos = rearrange(pos, "(n m) d -> n m d", m=self.ball_size)
-#         return self.sigma_att * torch.cdist(pos, pos, p=2).unsqueeze(1)
-
-#     @torch.no_grad()
-#     def compute_rel_pos(self, pos: torch.Tensor):
-#         """Relative position of leafs wrt the center of the ball (eq. 9)."""
-#         pos = rearrange(pos, "(n m) E -> n m E", m=self.ball_size)
-#         # num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
-#         # pos = pos.view(num_balls, self.ball_size, dim)
-#         pos = pos - pos.mean(dim=1, keepdim=True)
-#         return rearrange(pos, "n m E -> (n m) E")
-#         # return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
-
-#     @torch.no_grad()
-#     def select_balls_mean(
-#         self, q: torch.Tensor, k: torch.Tensor
-#     ) -> Tuple[torch.Tensor, torch.Tensor]:
-#         queries = rearrange(q, "b H n m E -> b H (n m) E")
-#         keys = reduce(k, "b H n m E -> b H E n", "mean")
-#         similarity = queries @ keys
-#         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
-#         return topk_indices
-
-#     def select_balls_mlp(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
-#         queries = rearrange(q, "b H n m E -> b H (n m) E")
-#         keys = self.selection_proj(
-#             rearrange(k, "b H n m E -> b H n (m E)")
-#         ).squeeze(-1)
-#         keys = rearrange(keys, "b H km E -> b H E km")
-#         similarity = queries @ keys
-#         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
-#         return topk_indices
-
-#     def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
-#         x = x + self.pe_proj(self.compute_rel_pos(pos))
-#         qkv = self.qkv(x)
-#         q, k, v = repeat(
-#             qkv,
-#             "(b n m) (H E K) -> K b H n m E",
-#             b=num_batches,
-#             H=self.num_heads,
-#             m=self.ball_size,
-#             K=3,
-#         )
-#         topk_indices = self.select_balls_mlp(q, k)
-
-#         # tensor are of shape b h (n m) topk
-#         num_points = q.shape[-3] * q.shape[-2]
-#         k = repeat(k, "b H n m E -> b H nm n m E", nm=num_points)
-#         v = repeat(v, "b H n m E -> b H nm n m E", nm=num_points)
-
-#         topk_indices = repeat(
-#             topk_indices,
-#             "b H nm topk -> b H nm topk m E",
-#             m=self.ball_size,
-#             E=v.shape[-1],
-#         )
-
-#         desired_values = torch.gather(v, dim=2, index=topk_indices)
-#         desired_keys = torch.gather(k, dim=2, index=topk_indices)
-
-#         # Rearrange topk
-#         desired_keys = rearrange(desired_keys, "... n m E -> ... (n m) E")
-#         desired_values = rearrange(desired_values, "... n m E -> ... (n m) E")
-
-#         q = repeat(q, "b H n m E -> b H (n m) km E", km=1)
-
-#         out = F.scaled_dot_product_attention(
-#             q, desired_keys, desired_values, attn_mask=None)
-
-#         out = rearrange(out, "b H nm km E -> (b nm) (km H E)")
-#         return self.proj(out)
-
 def sparse_attention_pytorch(q, k, v, selection_size, topk_indices):
     # tensor are of shape b h (n m) topk
     num_points = q.shape[-3] * q.shape[-2]
@@ -810,6 +700,46 @@ def sparse_attention_pytorch(q, k, v, selection_size, topk_indices):
         q, desired_keys, desired_values, attn_mask=None)
 
     out = rearrange(out, "b H nm km E -> (b nm) (km H E)")
+
+class FullAttention(nn.Module):
+    """Full attention module."""
+
+    def __init__(
+        self,
+        dim: int,
+        num_heads: int,
+        ball_size,
+        dimensionality: int,
+        *args,
+        **kwargs
+    ):
+        super().__init__()
+        self.dim = dim
+        self.num_heads = num_heads
+
+        self.qkv = nn.Linear(dim, 3 * dim)
+        self.proj = nn.Linear(dim, dim)
+        self.pe_proj = nn.Linear(dimensionality, dim)
+
+    @torch.no_grad()
+    def compute_rel_to_cloud(self, pos: torch.Tensor, num_batches: int):
+        """Relative position of leafs wrt the center of the pointcloud (eq. 9)."""
+        pos = rearrange(pos, "(b n) E -> b n E", b=num_batches)
+        return pos - pos.mean(dim=1, keepdim=True)
+
+    def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
+        x = rearrange(x, "(b n) E -> b n E", b=num_batches)
+        x = x + self.pe_proj(self.compute_rel_to_cloud(pos, num_batches))
+        qkv = self.qkv(x)
+        q, k, v = rearrange(
+            qkv,
+            "b n (H E K) -> K b H n E",
+            H=self.num_heads,
+            K=3,
+        )
+        out = F.scaled_dot_product_attention(q, k, v)
+        out = rearrange(out, "b h n e -> (b n) (h e)")
+        return self.proj(out)
 
 class NSAMSA(nn.Module):
     """Ball Multi-Head Self-Attention (BMSA) module (eq. 8)."""
@@ -964,7 +894,7 @@ class ErwinTransformerBlock(nn.Module):
             "BallMSA": BallMSA,
             "NSAMSA": NSAMSA,
             "LucidRains": LucidRainsMinimal,
-            # "NSAMSA_triton": NSAMSA_triton,
+            "FullAttention": FullAttention,
         }[msa_type]
 
         self.BMSA = MSABase(
@@ -1058,6 +988,7 @@ class BasicLayer(nn.Module):
         printd("Erwin transformer blocks:")
         node = self.unpool(node)
 
+
         if (
             len(self.rotate) > 1 and any(self.rotate)
         ):
@@ -1071,8 +1002,15 @@ class BasicLayer(nn.Module):
         num_batches = node.batch_idx.max() + 1
         assert num_batches > 0
 
+        if self.attn_kwargs['beginnsa']:
+            node.x = self.nsa_block(node.x, node.pos, num_batches)
+
+        total = len(self.blocks)
+        break_point = total //2
         for i, (rotate, blk) in enumerate(zip(self.rotate, self.blocks)):
             printd(f"{i} ", end="")
+            if self.attn_kwargs['middlensa'] and i == break_point:
+                node.x = self.nsa_block(node.x, node.pos, num_batches)
             if rotate:
                 node.x = blk(node.x[node.tree_idx_rot], node.pos[node.tree_idx_rot], num_batches)[
                     tree_idx_rot_inv
