@@ -54,6 +54,11 @@ def parse_args():
                         choices=["", "BallMSA", "NSAMSA", "LucidRains", "FullAttention"])
     parser.add_argument("--nsa-loc", type=str, default="last")
     parser.add_argument("--no-triton", action="store_true", help="use only with nsamsa")
+    parser.add_argument(
+        "--topk",
+        type=int,
+        help="Number of selected blocks for attention"
+    )
 
     return parser.parse_args()
 
@@ -194,11 +199,14 @@ if __name__ == "__main__":
                 model_config = dict(yaml.safe_load(f))
                 print(model_config)
         else:
+            attn_kwargs = {}
+            attn_kwargs |= { "implementation": "pytorch" } if args.no_triton else {}
+            attn_kwargs |= { "topk" : args.topk } if args.topk is not None else {}
             model_config = erwin_configs[args.size] | {
                 "msa_type": args.msa_type,
                 "nsa_type": args.nsa_type,
                 "nsa_loc": args.nsa_loc,
-                "attn_kwargs": { "implementation": "pytorch" } if args.no_triton else {}
+                "attn_kwargs": attn_kwargs
             }
         # if args.profile:
         #     model_config = erwin_configs["profile"]

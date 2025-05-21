@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import select
 from typing import Tuple
 import inspect
 
@@ -753,21 +754,27 @@ class NSAMSA(nn.Module):
         topk: int = 2,
         use_diff_topk: bool = True,
         selection_ball_size: int = 16,
-        use_flex: bool = False,
         implementation: str = "triton",
         custom_num_heads: int | None = None,
         head_dim_factor: int = 1,
+        masks: bool = True,
+        size=16384
     ):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
-        self.ball_size = selection_ball_size
+        self.mask_block_size = ball_size
+        self.selection_ball_size = selection_ball_size
         self.topk = topk
         self.scale = dim**-0.5
         self.use_diff_topk = use_diff_topk
-        self.use_flex = use_flex
         head_dim = dim // num_heads * head_dim_factor
         self.impl = implementation
+
+        self.use_masks = masks
+        if masks:
+            diagonal_matrices = [torch.ones((self.mask_block_size, self.mask_block_size//self.selection_ball_size), dtype=torch.bool)] * self.mask_block_size
+            self.attn_mask = nn.Buffer(torch.block_diag(*diagonal_matrices))
 
         self.qkv = nn.Linear(dim, 3 * dim * head_dim_factor)
         self.proj = nn.Linear(dim * head_dim_factor, dim)
@@ -785,18 +792,24 @@ class NSAMSA(nn.Module):
     @torch.no_grad()
     def create_attention_mask(self, pos: torch.Tensor):
         """Distance-based attention bias (eq. 10)."""
-        pos = rearrange(pos, "(n m) d -> n m d", m=self.ball_size)
+        pos = rearrange(pos, "(n m) d -> n m d", m=self.selection_ball_size)
         return self.sigma_att * torch.cdist(pos, pos, p=2).unsqueeze(1)
 
     @torch.no_grad()
     def compute_rel_pos(self, pos: torch.Tensor):
         """Relative position of leafs wrt the center of the ball (eq. 9)."""
-        pos = rearrange(pos, "(n m) E -> n m E", m=self.ball_size)
-        # num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
-        # pos = pos.view(num_balls, self.ball_size, dim)
+        pos = rearrange(pos, "(n m) E -> n m E", m=self.selection_ball_size)
+        # num_balls, dim = pos.shape[0] // self.selection_ball_size, pos.shape[1]
+        # pos = pos.view(num_balls, self.selection_ball_size, dim)
         pos = pos - pos.mean(dim=1, keepdim=True)
         return rearrange(pos, "n m E -> (n m) E")
         # return (pos - pos.mean(dim=1, keepdim=True)).view(-1, dim)
+
+    @torch.no_grad()
+    def compute_rel_to_cloud(self, pos: torch.Tensor, num_batches: int):
+        """Relative position of leafs wrt the center of the pointcloud (eq. 9)."""
+        pos = rearrange(pos, "(b n) E -> b n E", b=num_batches)
+        return pos - pos.mean(dim=1, keepdim=True)
 
     @torch.no_grad()
     def select_balls_mean(
@@ -808,31 +821,43 @@ class NSAMSA(nn.Module):
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
         return topk_indices
 
+    def create_mask(self, nm, n):
+        return self.attn_mask[:nm, :n]
+
+
     def select_balls_mlp(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
         queries = rearrange(q, "b H n m E -> b H (n m) E")
         keys = self.selection_proj(
             rearrange(k, "b H n m E -> b H n (m E)")
         ).squeeze(-1)
-        keys = rearrange(keys, "b H km E -> b H E km")
-        similarity = queries @ keys
+        keys = rearrange(keys, "b H n E -> b H E n")
+        similarity = queries @ keys # b H (n m) E @ b H E n -> b H (n m) n
+        if self.use_masks:
+            n = keys.shape[-1]
+            nm = queries.shape[-2]
+            mask = self.create_mask(nm, n)
+            similarity = similarity.masked_fill(mask, float('-inf'))
+            print(f"sim: {similarity}")
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
+        print(f"topk indices: {topk_indices}")
         return topk_values, topk_indices
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
-        # Enable asserts to debug NaNs
-        assert not torch.isnan(x).any(), "NaN in inputs!"
-        assert not torch.isinf(x).any(), "Inf in inputs!"
-        assert not torch.isnan(pos).any(), "NaN in pos!"
-        assert not torch.isinf(pos).any(), "Inf in pos!"
+        # # Enable asserts to debug NaNs
+        # assert not torch.isnan(x).any(), "NaN in inputs!"
+        # assert not torch.isinf(x).any(), "Inf in inputs!"
+        # assert not torch.isnan(pos).any(), "NaN in pos!"
+        # assert not torch.isinf(pos).any(), "Inf in pos!"
 
-        x = x + self.pe_proj(self.compute_rel_pos(pos))
+        x = rearrange(x, "(b n) E -> b n E", b=num_batches)
+        x = x + self.pe_proj(self.compute_rel_to_cloud(pos, num_batches))
         qkv = self.qkv(x)
-        q, k, v = repeat(
+        q, k, v = rearrange(
             qkv,
-            "(b n m) (H E K) -> K b H n m E",
+            "b (n m) (H E K) -> K b H n m E",
             b=num_batches,
             H=self.num_heads,
-            m=self.ball_size,
+            m=self.selection_ball_size,
             K=3,
         )
 
@@ -840,19 +865,22 @@ class NSAMSA(nn.Module):
         topk_indices = topk_indices.contiguous()
 
         if self.impl == "pytorch":
-            out = sparse_attention_pytorch(q, k, v, self.ball_size, topk_indices)
+            out = sparse_attention_pytorch(q, k, v, self.selection_ball_size, topk_indices)
 
         elif self.impl == "triton":
             q, k, v = tuple(rearrange(t, "b H n m E -> b H (n m) E").contiguous() for t in (q, k, v))
 
-            topk_values = F.pad(topk_values, (1, 0), value = -1e3)
-            topk_values = topk_values.softmax(dim = -1)
-            topk_values = topk_values[..., 1:]
+            # topk_values = F.pad(topk_values, (1, 0), value = -1e3)
+            # topk_values = topk_values.softmax(dim = -1)
+            # topk_values = topk_values[..., 1:]
 
-            fmask = (topk_values > 1e-10).contiguous()
+
+            # fmask = (topk_values > 1e-10).contiguous()
+            fmask = torch.ones_like(topk_values).bool()
+            assert torch.all(fmask)
             out = native_sparse_attend(
                 q, k, v,
-                self.ball_size,
+                self.selection_ball_size,
                 topk_indices,
                 fmask,
                 include_block_causal = False
@@ -861,7 +889,7 @@ class NSAMSA(nn.Module):
 
         elif self.impl == "flex":
             q, k, v = tuple(rearrange(t, "b H n m E -> b H (n m) E").contiguous() for t in (q, k, v))
-            fine_selection_flex_mask = create_fine_mask(q.shape[2], self.ball_size)
+            fine_selection_flex_mask = create_fine_mask(q.shape[2], self.selection_ball_size)
             fine_block_mask = fine_selection_flex_mask(topk_indices)
 
             out = flex_attention(q, k, v, block_mask = fine_block_mask)
