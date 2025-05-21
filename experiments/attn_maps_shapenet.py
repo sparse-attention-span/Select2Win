@@ -75,6 +75,12 @@ if __name__ == "__main__":
     sample = valid_dataset[0]
     print(f"Sample shape: {sample.shape}")
     main_model = model_cls[args.model](**model_config)
-    model = ShapenetCarModel(main_model).cuda()
+    model = ShapenetCarModel(main_model)
+
+    # load weights (hardcoded for now)
+    checkpoint = torch.load("checkpoints/.pt", map_location="cuda:0", weights_only=True)
+    model.load_state_dict(checkpoint["model_state_dict"])
+
+    model = model.cuda()
     attn_maps = get_attn_maps(model, sample)
     print(attn_maps.keys())
