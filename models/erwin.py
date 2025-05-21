@@ -752,13 +752,10 @@ class NSAMSA(nn.Module):
         ball_size: int,
         dimensionality: int = 3,
         topk: int = 2,
-        use_diff_topk: bool = True,
-        selection_ball_size: int = 16,
+        selection_ball_size: int = 32,
         implementation: str = "triton",
-        custom_num_heads: int | None = None,
         head_dim_factor: int = 1,
         masks: bool = True,
-        size=16384
     ):
         super().__init__()
         self.dim = dim
@@ -767,7 +764,6 @@ class NSAMSA(nn.Module):
         self.selection_ball_size = selection_ball_size
         self.topk = topk
         self.scale = dim**-0.5
-        self.use_diff_topk = use_diff_topk
         head_dim = dim // num_heads * head_dim_factor
         self.impl = implementation
 

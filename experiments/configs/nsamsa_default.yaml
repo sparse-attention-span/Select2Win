@@ -8,5 +8,4 @@ dec_depths: [6]
 strides: [1]
 rotate: 0
 mp_steps: 3
-nsa_type: "NSAMSA_triton"
-attn_kwargs: {}
+nsa_type: "NSAMSA"
