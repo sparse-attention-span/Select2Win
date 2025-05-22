@@ -1,0 +1,16 @@
+#!/bin/bash
+
+#SBATCH --partition=gpu_a100
+#SBATCH --gpus=1
+#SBATCH --job-name=attn_maps
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --time=00:05:00
+#SBATCH --output=cosmos_logs/slurm_output_%A.out
+
+source ../../erwin/erwin/bin/activate
+
+python attn_maps_shapenet.py \
+    --num-epochs 40000 --lr 1e-3 --use-wandb --test \
+ --data-path "/home/scur2571/erwin/shapenet_car/mlcfd_data/processed" \
+ --nsa-type AccessibleNSAMSA --nsa-loc begin --topk 8 --size medium --experiment k8

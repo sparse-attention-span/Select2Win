@@ -940,7 +940,7 @@ class AccessibleNSAMSA(NSAMSA):
         qkv = self.qkv(x)
         q, k, _ = rearrange(
             qkv,
-            "b nm (H E K) -> K b H n m E",
+            "b (n m) (H E K) -> K b H n m E",
             b=num_batches,
             H=self.num_heads,
             m=self.selection_ball_size,
@@ -972,11 +972,8 @@ class AccessibleNSAMSA(NSAMSA):
         q = rearrange(q, "b H n m E -> b H (n m) E")
         k = rearrange(k, "b H n m E -> b H (n m) E")
         scale = torch.sqrt(torch.tensor(q.shape[-1]))
-        attn_scores = einsum(q, k, "b H nm E, b H nm E -> b H nm nm") / scale
+        attn_scores = einsum(q, k, "b H nm E, b H nm2 E -> b H nm nm2") / scale
         attn_scores = F.softmax(attn_scores, dim=-1)
-        attn_scores = rearrange(
-            attn_scores, "b H (n m) nm -> b H n m nm", m=self.selection_ball_size
-        )
         attn_scores = attn_scores * mask
 
         return attn_scores
@@ -1365,6 +1362,8 @@ class ErwinTransformer(nn.Module):
                     self.ball_sizes,
                     self.rotate,
                 )
+                self.tree_mask = tree_mask # save for attn map vis
+                self.tree_idx = tree_idx
             if edge_index is None and self.embed.mp_steps:
                 assert (
                     radius is not None

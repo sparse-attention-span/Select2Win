@@ -6,22 +6,23 @@ sys.path.append("../")
 
 import yaml
 import torch
+from torch.utils.data import DataLoader
 
 torch.set_float32_matmul_precision("high")
 
 
-from erwin.experiments.datasets import ShapenetCarDataset
-from erwin.experiments.wrappers import ShapenetCarModel
-from erwin.models.erwin import AccessibleNSAMSA
+from experiments.datasets import ShapenetCarDataset
+from experiments.wrappers import ShapenetCarModel
+from models.erwin import AccessibleNSAMSA
 
 from train_shapenet import parse_args, erwin_configs, model_cls
 
 
 def get_attn_maps(model, sample):
-    _ = model(sample)
+    _ = model.validation_step(sample)
 
     attn_maps = {
-        name: module.attn_cache
+        name: {"value": module.attn_cache, "ball size": module.selection_ball_size, "topk": module.topk}
         for name, module in model.named_modules()
         if isinstance(module, AccessibleNSAMSA)
     }
@@ -37,16 +38,18 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    train_dataset = ShapenetCarDataset(
-        data_path=args.data_path,
-        split="train",
-        knn=args.knn,
-    )
-
     valid_dataset = ShapenetCarDataset(
         data_path=args.data_path,
         split="test",
         knn=args.knn,
+    )
+    valid_loader = DataLoader(
+        valid_dataset,
+        batch_size=1,
+        shuffle=False,
+        collate_fn=valid_dataset.collate_fn,
+        num_workers=args.batch_size,
+        persistent_workers=True,
     )
 
     if args.nsa_type == "":
@@ -72,15 +75,22 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError(f"Unknown model: {args.model}")
 
-    sample = valid_dataset[0]
-    print(f"Sample shape: {sample.shape}")
     main_model = model_cls[args.model](**model_config)
     model = ShapenetCarModel(main_model)
 
     # load weights (hardcoded for now)
-    checkpoint = torch.load("checkpoints/.pt", map_location="cuda:0", weights_only=True)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    checkpoint_name = "erwin_k8_medium_0_best"
+    checkpoint = torch.load(f"checkpoints/{checkpoint_name}.pt", map_location="cuda:0", weights_only=True)
+    state_dict = checkpoint["model_state_dict"]
+    state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()} # torch.compile shenanigans
+    model.load_state_dict(state_dict, strict=True)
+    model = model.cuda().eval()
 
-    model = model.cuda()
+
+    sample = next(iter(valid_loader))
+    sample = {k: v.cuda() for k, v in sample.items()}
     attn_maps = get_attn_maps(model, sample)
+    print("attn keys")
     print(attn_maps.keys())
+    results = {"attn_maps": attn_maps, "sample": sample, "tree_mask": model.main_model.tree_mask, "tree_idx": model.main_model.tree_idx}
+    torch.save(results, f"attn_maps/attn_map_{checkpoint_name}.pt")
