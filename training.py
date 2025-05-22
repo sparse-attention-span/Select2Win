@@ -312,7 +312,7 @@ def fit(
 
                 global_step += 1
 
-        if config.get("profile"):
+        # if config.get("profile"):
             # events = prof.key_averages()
             # df = pd.DataFrame(map(vars, events))
             # df = df.sort_values(by='device_memory_usage', ascending=False)
@@ -329,11 +329,11 @@ def fit(
             # df = df[keep]
             # df = convert_units(df)
             # print(df)
-            print(
-                prof.key_averages().table(
-                    sort_by="self_cuda_memory_usage", row_limit=10
-                )
-            )
+            # print(
+            #     prof.key_averages().table(
+            #         sort_by="self_cuda_memory_usage", row_limit=10
+            #     )
+            # )
 
     if test_loader is not None and config.get("test", False):
         print("Loading best checkpoint for testing...")
@@ -358,6 +358,28 @@ def fit(
             loss_keys = [k for k in test_stats.keys() if "loss" in k]
             for k in loss_keys:
                 print(f"Test {k}: {test_stats[k]:.4f}")
+                
+                
+    if config.get("profile"):
+        # Run the profiler on a single batch
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            profile_memory=True,
+            with_flops=True,
+            record_shapes=True,
+            on_trace_ready=tensorboard_trace_handler("log_dir"),
+            with_modules=True,
+        ) as prof2:
+            model.eval()
+            batch = next(iter(train_loader))
+            batch = {k: v.cuda() for k, v in batch.items()}
+            model(batch)
+            
+            print(
+                prof2.key_averages().table(
+                    sort_by="self_cuda_memory_usage", row_limit=10
+                )
+            )
     return model
 
 
