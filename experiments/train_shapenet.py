@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument("--data-path", type=str, default="../shapenet_car/preprocessed")
     parser.add_argument("--config", type=str, default="")
     parser.add_argument("--size", type=str, default="small",
-                        choices=('small', 'medium', 'large', 'debug'))
+                        choices=('small', 'medium', 'medium+', 'large', 'debug'))
     parser.add_argument("--num-epochs", type=int, default=100000)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--use-wandb", action="store_true")
@@ -52,7 +52,7 @@ def parse_args():
                         choices=["BallMSA", "NSAMSA", "LucidRains"])
     parser.add_argument("--nsa-type", type=str, default="",
                         choices=["", "BallMSA", "NSAMSA", "LucidRains", "FullAttention"])
-    parser.add_argument("--nsa-loc", type=str, default="last")
+    parser.add_argument("--nsa-loc", type=str, default="begin")
     parser.add_argument("--no-triton", action="store_true", help="use only with nsamsa")
     parser.add_argument(
         "--topk",
@@ -105,6 +105,19 @@ erwin_configs = {
     "medium": {
         "c_in": 64,
         "c_hidden": 128,
+        "ball_sizes": [256, 256],
+        "enc_num_heads": [8, 8],
+        "enc_depths": [6, 6],
+        "dec_num_heads": [8],
+        "dec_depths": [6],
+        "strides": [1],
+        "rotate": 45,
+        "mp_steps": 3,
+        "msa_type": ""
+    },
+    "medium+": {
+        "c_in": 64,
+        "c_hidden": 136,
         "ball_sizes": [256, 256],
         "enc_num_heads": [8, 8],
         "enc_depths": [6, 6],

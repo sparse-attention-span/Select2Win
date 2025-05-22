@@ -479,9 +479,9 @@ class LucidRainsMinimal(nn.Module):
         per_ball: bool = False,
         use_flex_attn: bool = False,
         use_triton_impl: bool = True,
-        use_miniballattn: bool = True,
+        use_miniballattn: bool = False,
         topk: int = 2,
-        kv_head_factor: int = 4,
+        kv_head_factor: int = 1,
         dim_head_factor: int = 1,
         compress_stride_fraction: int = 1,
         compress_mlp_expand_factor: float = 1.0,
@@ -492,7 +492,7 @@ class LucidRainsMinimal(nn.Module):
         if custom_num_heads is not None:
             num_heads = custom_num_heads
         self.num_heads = num_heads
-        self.ball_size = selection_ball_size
+        self.selection_ball_size = selection_ball_size
         self.per_ball = per_ball
         self.use_flex_attn = use_flex_attn
         self.use_triton_impl = use_triton_impl
@@ -503,10 +503,10 @@ class LucidRainsMinimal(nn.Module):
             assert not use_triton_impl
 
         if not per_ball:
-            SLIDING_WINDOW_SIZE = self.ball_size
-            COMPRESS_BLOCK_SIZE = self.ball_size
-            COMPRESS_BLOCK_SLIDING_STRIDE = self.ball_size//compress_stride_fraction
-            FINE_BLOCK_SIZE = self.ball_size
+            SLIDING_WINDOW_SIZE = self.selection_ball_size
+            COMPRESS_BLOCK_SIZE = self.selection_ball_size
+            COMPRESS_BLOCK_SLIDING_STRIDE = self.selection_ball_size//compress_stride_fraction
+            FINE_BLOCK_SIZE = self.selection_ball_size
         else:
             print("WARNING: per_ball uses hardcoded values!")
             SLIDING_WINDOW_SIZE = ball_size//8
@@ -520,7 +520,7 @@ class LucidRainsMinimal(nn.Module):
             SLIDING_WINDOW_SIZE = None # fixes bug where NSA defaults to sliding window
             sliding_window_attn = None
 
-        print(f"Ball size: {ball_size}, selection ball size: {self.ball_size}")
+        print(f"Ball size: {ball_size}, selection ball size: {self.selection_ball_size}")
 
         # basic dim checks
         assert dim % num_heads == 0
@@ -556,6 +556,12 @@ class LucidRainsMinimal(nn.Module):
         self.B = None
 
     @torch.no_grad()
+    def compute_rel_to_cloud(self, pos: torch.Tensor, num_batches: int):
+        """Relative position of leafs wrt the center of the pointcloud (eq. 9)."""
+        pos = rearrange(pos, "(b n) E -> b n E", b=num_batches)
+        return pos - pos.mean(dim=1, keepdim=True)
+
+    @torch.no_grad()
     def compute_rel_pos(self, pos: torch.Tensor):
         """ Relative position of leafs wrt the center of the ball (eq. 9). """
         num_balls, dim = pos.shape[0] // self.ball_size, pos.shape[1]
@@ -569,7 +575,7 @@ class LucidRainsMinimal(nn.Module):
         assert not torch.isnan(pos).any(), "NaN in pos!"
         assert not torch.isinf(pos).any(), "Inf in pos!"
         # print(f"x has shape: {x.shape}")
-        x = x + self.pe_proj(self.compute_rel_pos(pos))
+        x = x + self.pe_proj(self.compute_rel_to_cloud(pos, num_batches))
 
         if self.per_ball:
             x = rearrange(x, "(n m) E -> n m E", m=self.ball_size)
@@ -833,9 +839,9 @@ class NSAMSA(nn.Module):
             nm = queries.shape[-2]
             mask = self.create_mask(nm, n)
             similarity = similarity.masked_fill(mask, float('-inf'))
-            print(f"sim: {similarity}")
+            # printd(f"sim: {similarity}")
         topk_values, topk_indices = torch.topk(similarity, self.topk, dim=-1)
-        print(f"topk indices: {topk_indices}")
+        # printd(f"topk indices: {topk_indices}")
         return topk_values, topk_indices
 
     def forward(self, x: torch.Tensor, pos: torch.Tensor, num_batches: int):
@@ -956,7 +962,7 @@ class BasicLayer(nn.Module):
             nsa_loc = [depth]
         elif nsa_loc in ("middle", "center"):
             nsa_loc = [depth//2]
-        elif nsa_loc in ("first", "begin", "start"):
+        elif nsa_loc in ("first", "begin", "beginning", "start"):
             nsa_loc = [0]
         else:
             nsa_loc = parse_index_list(nsa_loc, depth)

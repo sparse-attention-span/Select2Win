@@ -15,10 +15,10 @@ uv run train_shapenet.py --num-epochs 200 \
  --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" \
  --size medium
 
- uv run train_shapenet.py --num-epochs 200 \
+uv run train_shapenet.py --num-epochs 200 \
  --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" \
  --nsa-type NSAMSA --nsa-loc begin --topk 2 --size medium
 
-  uv run train_shapenet.py --num-epochs 200 \
+uv run train_shapenet.py --num-epochs 200 \
  --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" \
  --nsa-type NSAMSA --nsa-loc begin --no-triton
