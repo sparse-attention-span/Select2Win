@@ -2,6 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from einops import rearrange
+from tqdm import tqdm
 
 path = "../experiments/attn_maps/attn_map_erwin_k8_medium_0_best.pt"
 data = torch.load(path, map_location="cpu", weights_only=True)
@@ -17,7 +18,7 @@ target_idx = 0
 
 
 fig = plt.figure(figsize=(50, 10))
-nrows = len(attn_maps)
+nrows = len(attn_maps) + 1
 ncols = max(mp["value"].shape[1] for mp in attn_maps.values())
 
 
@@ -37,13 +38,15 @@ for i, (layer_name, attn_map_data) in enumerate(attn_maps.items()):
     attn_map = attn_map_data["value"][0] # assume batch size 1
     ball_size = attn_map_data["ball size"]
 
+    start_ax_idx = (i + 1) * ncols + 1
+
     for h, head_attn_map in enumerate(attn_map):
         head_attn_map = head_attn_map[target_idx]
         head_attn_map = head_attn_map - head_attn_map.min()
         head_attn_map = head_attn_map / head_attn_map.max()
         head_attn_map = head_attn_map * 0.99 + 0.01
 
-        ax = fig.add_subplot(nrows, ncols, i + 2 + h, projection='3d')
+        ax = fig.add_subplot(nrows, ncols, start_ax_idx + h, projection='3d')
         grouped_head_attn_map = rearrange(head_attn_map, "(n m) -> n m", m=ball_size)
 
         # plot per group to get colors
@@ -52,21 +55,25 @@ for i, (layer_name, attn_map_data) in enumerate(attn_maps.items()):
             group_samples = group_samples[group_mask]
 
             ax.scatter(group_samples[:, 0], group_samples[:, 1], group_samples[:, 2], alpha=group_head_attn_map)
-            ax.scatter(
-                target_point[0],
-                target_point[1],
-                target_point[2],
-                color='black',
-                s=100,
-                marker='X',
-                linewidths=1.5,
-                label='Target Point'
-            )
-            ax.set_title(f"{layer_name} head {h}")
 
-        break
+        ax.scatter(
+            target_point[0],
+            target_point[1],
+            target_point[2],
+            color='black',
+            s=100,
+            marker='X',
+            linewidths=1.5,
+            label='Target Point'
+        )
+        ax.set_title(f"{layer_name} head {h}")
+        # ax.set_xticks([])
+        # ax.set_yticks([])
+        # ax.set_zticks([])
 
-    break
 
 
-plt.savefig("attn_maps.png")
+# todo add cmd line args
+# todo make colors consistent
+plt.tight_layout()
+plt.savefig("attn_maps.pdf")
