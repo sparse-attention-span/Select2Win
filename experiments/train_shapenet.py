@@ -13,9 +13,10 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from training import fit
-from models.erwin import ErwinTransformer
-from experiments.datasets import ShapenetCarDataset
-from experiments.wrappers import ShapenetCarModel
+from erwin.training import fit
+from erwin.models.erwin import ErwinTransformer
+from erwin.experiments.datasets import ShapenetCarDataset
+from erwin.experiments.wrappers import ShapenetCarModel
 import time
 import gc
 
