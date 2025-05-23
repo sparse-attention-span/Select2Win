@@ -12,10 +12,10 @@ from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from erwin.training import fit
-from erwin.models.erwin import ErwinTransformer
-from erwin.experiments.datasets import ShapenetCarDataset
-from erwin.experiments.wrappers import ShapenetCarModel
+from training import fit
+from models.erwin import ErwinTransformer
+from experiments.datasets import ShapenetCarDataset
+from experiments.wrappers import ShapenetCarModel
 import time
 import gc
 
@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument("--msa-type", type=str, default="BallMSA",
                         choices=["BallMSA", "NSAMSA", "LucidRains"])
     parser.add_argument("--nsa-type", type=str, default="",
-                        choices=["", "BallMSA", "NSAMSA", "LucidRains", "FullAttention"])
+                        choices=["", "BallMSA", "NSAMSA", "LucidRains", "FullAttention", "AccessibleNSAMSA"])
     parser.add_argument("--nsa-loc", type=str, default="begin")
     parser.add_argument("--no-triton", action="store_true", help="use only with nsamsa")
     parser.add_argument(
