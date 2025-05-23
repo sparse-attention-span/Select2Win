@@ -12,7 +12,6 @@ from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from training import fit
 from erwin.training import fit
 from erwin.models.erwin import ErwinTransformer
 from erwin.experiments.datasets import ShapenetCarDataset
