@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument("--msa-type", type=str, default="BallMSA",
                         choices=["BallMSA", "NSAMSA", "LucidRains"])
     parser.add_argument("--nsa-type", type=str, default="",
-                        choices=["", "BallMSA", "NSAMSA", "LucidRains", "FullAttention"])
+                        choices=["", "BallMSA", "NSAMSA", "LucidRains", "FullAttention", "AccessibleNSAMSA"])
     parser.add_argument("--nsa-loc", type=str, default="begin")
     parser.add_argument("--no-triton", action="store_true", help="use only with nsamsa")
     parser.add_argument(

@@ -82,27 +82,23 @@ def main(args):
     target_idx = args.target_idx
     show_target = not show_all and len(target_idx) == 1
 
-    fig = plt.figure(figsize=(50, 10))
-    nrows = len(attn_maps) + 1
-    ncols = max(mp["value"].shape[1] for mp in attn_maps.values())
     cmap = plt.get_cmap("tab20")
 
     # plot ball tree
-    ax = fig.add_subplot(nrows, ncols, 1, projection='3d')
     samples_ = rearrange(samples, "(n m) d -> n m d", m=BALL_SIZE)  # todo: adapt for each layer
     tree_mask_ = rearrange(tree_mask, "(n m)-> n m", m=BALL_SIZE)  # todo: adapt for each layer
-    add_point_cloud(ax, samples_, tree_mask_, cmap, single_color, aspect_ratio=ASPECT_RATIO, hide_ax=args.hide_ax)
-    ax.set_title("Ball Partitioning")
 
     if show_target:
         target_point = samples[target_idx].squeeze()
 
     # plot attention maps
     for i, (layer_name, attn_map_data) in enumerate(attn_maps.items()):
+        fig = plt.figure(figsize=(20, 10))
+        ncols = 4
+        nrows = 2
+
         attn_map = attn_map_data["value"][0]  # assume batch size 1
         ball_size = attn_map_data["ball size"]
-
-        start_ax_idx = (i + 1) * ncols + 1
 
         for h, head_attn_map in enumerate(attn_map):
             if not show_all:
@@ -112,7 +108,8 @@ def main(args):
             head_attn_map = head_attn_map / head_attn_map.max()
             head_attn_map = head_attn_map * (1 - MIN_ALPHA) + MIN_ALPHA
 
-            ax = fig.add_subplot(nrows, ncols, start_ax_idx + h, projection='3d')
+            idx = h + 1
+            ax = fig.add_subplot(nrows, ncols, idx, projection='3d')
             grouped_head_attn_map = rearrange(head_attn_map, "(n m) -> n m", m=ball_size)
             add_point_cloud(ax, samples_, tree_mask_, cmap, single_color, weights=grouped_head_attn_map, aspect_ratio=ASPECT_RATIO, hide_ax=args.hide_ax)
 
@@ -127,11 +124,13 @@ def main(args):
                     linewidths=1.5,
                     label='Target Point'
                 )
-            ax.set_title(f"{layer_name} head {h}")
+            ax.set_title(f"Head {h}")
 
-    plt.tight_layout()
-    plt.savefig(args.output)
-    print(f"Saved figure to {args.output}")
+        plt.tight_layout()
+        out_file = args.output
+        out_file = out_file[:-4] + f"_{layer_name.split('.')[1]}" + out_file[-4:]
+        plt.savefig(out_file, bbox_inches='tight')
+        print(f"Saved figure to {out_file}")
 
 
 if __name__ == "__main__":
