@@ -1,13 +1,13 @@
-# Erwin Transformer
-<p align="center">
+# Select2Win Transformer: Adapting Erwin
+<!-- <p align="center">
     <a href="https://arxiv.org/abs/2502.17019"><strong>Erwin: A Tree-based Hierarchical Transformer for Large-scale Physical Systems</strong></a><br/>
     <a href="https://maxxxzdn.github.io/">Max Zhdanov</a>, Max Welling, Jan-Willem van de Meent
     <br/>
     <br/>
     <img src="misc/abstract.png" alt="Abstract" width="90%"/>
-</p>
+</p> -->
 
-## Trivia
+<!-- ## Trivia -->
 
 ### Ball Tree
 A **ball tree** is a hierarchical data structure that recursively partitions points into nested sets of similar size, where each set is represented by a ball that covers all the points in the set. The input is a point cloud, and the tree is built recursively:
@@ -16,7 +16,7 @@ A **ball tree** is a hierarchical data structure that recursively partitions poi
 </p>
 
 ### Ball Tree Attention
-The main idea of the paper is to compute attention within the ball tree partitions. Once the tree is built, one can choose the level of the tree and compute attention (**Ball Tree Attention**, BTA) within the balls in parallel:
+The base Erwin Transformer computes attention within the ball tree partitions. Once the tree is built, one can choose the level of the tree and compute attention (**Ball Tree Attention**, BTA) within the balls in parallel:
 <p align="center">
     <img src="misc/ball_tree_levels.png" alt="Ball Tree Attention" width="90%"/>
 </p>
@@ -173,6 +173,23 @@ To run/replicate experiments, you will need to download:
 - [ShapeNet-Car dataset](https://github.com/ml-jku/UPT/blob/main/SETUP_DATA.md) (2 GB) 
 
 For the single-chain polymer dataset, download all files and move them to the data folder that contains the `splits` folder.
+
+### Profiling Select2Win
+To run the profiler, use the following commands:
+
+Base Erwin:
+```
+python profile_forward_pass.py --size medium --num-epochs 1 --data-path "shapenet_car/preprocessed" --msa-type BallMSA --batch-size 1
+``` 
+NSA with topk = 2
+```
+python profile_forward_pass.py --size medium --num-epochs 1 --data-path "shapenet_car/preprocessed" --msa-type BallMSA --batch-size 1 --nsa-type NSAMSA --topk 2
+``` 
+Full Attention layer
+```
+python profile_forward_pass.py --size medium --num-epochs 1 --data-path "shapenet_car/preprocessed" --msa-type BallMSA --batch-size 1 --nsa-type FullAttention
+``` 
+
 
 ### Experiments
 Training scripts are given in [experiments](experiments). For example, to train on the molecular dynamics task:
