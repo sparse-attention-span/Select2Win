@@ -39,6 +39,7 @@ k_values = [0, 2, 8, 16, 32, 64, 128]
 means = [get_stats(baseline)[0]] + [get_stats(data)[0] for data in [k2, k8, k16, k32, k64]] + [get_stats(full)[0]]
 std_devs = [get_stats(baseline)[1]] + [get_stats(data)[1] for data in [k2, k8, k16, k32, k64]] + [get_stats(full)[1]]
 print(len(k_values), len(means), len(std_devs))
+plt.figure(figsize=(12, 8))
 plt.rcParams.update({'font.size': 14})
 # Plot the error bar as a transparent filled area
 plt.fill_between(k_values, np.array(means) - np.array(std_devs), np.array(means) + np.array(std_devs), alpha=0.2)
@@ -52,7 +53,7 @@ plt.scatter([0, 128], [means[0], means[-1]], color='red', label='Baseline and Fu
 plt.axhline(y=means[0], color='red', linestyle='--', label='Baseline Mean')
 # PLot a dotted line between the 'full' point and the k64 point for both lines
 plt.plot([64, 128], [means[-2], means[-1]], linestyle=':', color='blue', alpha=0.5)
-plt.xticks(k_values, ['B', 'K2', 'K8', 'K16', 'K32', 'K64', 'Full'])
+plt.xticks(k_values, ['B', '2', '8', '16', '32', '64', 'Full'])
 plt.xlabel('K Value')
 plt.ylabel('Test MSE')
 plt.title('Test MSE vs K Value')
@@ -64,7 +65,7 @@ plt.plot([64, 128], [memory_usages[-2], memory_usages[-1]], linestyle=':', color
 plt.ylabel('Memory Usage (GB)')
 plt.legend(loc='upper left')
 plt.legend()
-plt.xticks(k_values, ['B', 'K2', 'K8', 'K16', 'K32', 'K64', 'Full'])
+plt.xticks(k_values, ['B', '2', '8', '16', '32', '64', 'Full'])
 plt.grid()
 plt.savefig('test_mse_vs_k_value.png')
 plt.show()
