@@ -163,14 +163,14 @@ We compare the runtime of our implementation against the [`scikit-learn` impleme
 - NumPy
 
 
-## Replicating experiments  
+## Replicating experiments
 
 ### Experimental Data
 To run/replicate experiments, you will need to download:
 - [Cosmology dataset](https://zenodo.org/records/11479419) (7 GB)
 - [Single-chain polymer dataset (MD)](https://zenodo.org/records/6764836) (13 GB) + [splits](https://github.com/kyonofx/mlcgmd/tree/main/graphwm/splits/chain)
 - [EAGLE dataset](https://datasets.liris.cnrs.fr/eagle-version1) (270 GB)
-- [ShapeNet-Car dataset](https://github.com/ml-jku/UPT/blob/main/SETUP_DATA.md) (2 GB) 
+- [ShapeNet-Car dataset](https://github.com/ml-jku/UPT/blob/main/SETUP_DATA.md) (2 GB)
 
 For the single-chain polymer dataset, download all files and move them to the data folder that contains the `splits` folder.
 
@@ -180,15 +180,27 @@ To run the profiler, use the following commands:
 Base Erwin:
 ```
 python profile_forward_pass.py --size medium --num-epochs 1 --data-path "shapenet_car/preprocessed" --msa-type BallMSA --batch-size 1
-``` 
+```
 NSA with topk = 2
 ```
 python profile_forward_pass.py --size medium --num-epochs 1 --data-path "shapenet_car/preprocessed" --msa-type BallMSA --batch-size 1 --nsa-type NSAMSA --topk 2
-``` 
+```
 Full Attention layer
 ```
 python profile_forward_pass.py --size medium --num-epochs 1 --data-path "shapenet_car/preprocessed" --msa-type BallMSA --batch-size 1 --nsa-type FullAttention
-``` 
+```
+
+### Creating attention maps
+To create attention maps for each head of an NSA layer, use the following steps.
+First, extract the attention maps from the checkpoint. You should change the checkpoint path in ```experiments/attn_maps_shapenet.py```. Then, run this file with the same configuration as used for training, but replace ```--nsa-type AccessibleNSAMSA```.
+
+After this scripts finishes, a PyTorch file containing the attention maps can be found in ```experiments/attn_maps```. Run
+```
+cd visualizations
+python attn_maps.py --input-path PATH TO ATTN MAPS FILE
+```
+to generate the attention maps.
+
 
 
 ### Experiments
@@ -204,12 +216,12 @@ In case you have any ideas for future work based on Erwin or if you see possible
 ## BibTeX
 ```bibtex
 @misc{zhdanov2025erwintreebasedhierarchicaltransformer,
-      title={Erwin: A Tree-based Hierarchical Transformer for Large-scale Physical Systems}, 
+      title={Erwin: A Tree-based Hierarchical Transformer for Large-scale Physical Systems},
       author={Maksim Zhdanov and Max Welling and Jan-Willem van de Meent},
       year={2025},
       eprint={2502.17019},
       archivePrefix={arXiv},
       primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2502.17019}, 
+      url={https://arxiv.org/abs/2502.17019},
 }
 ```
