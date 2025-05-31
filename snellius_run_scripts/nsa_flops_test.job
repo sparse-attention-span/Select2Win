@@ -1,0 +1,30 @@
+#!/bin/bash
+#SBATCH --partition=gpu_h100
+#SBATCH --gpus=1
+#SBATCH --job-name=flops
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --time=04:00:00
+#SBATCH --output=slurm/flops.%A.%N.out
+
+source erwin/bin/activate
+
+echo "k2"
+uv run profile_forward_pass.py --size medium --num-epochs 1 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --msa-type BallMSA --batch-size 1 --nsa-type NSAMSA --topk 2
+echo "k2 done"
+echo "-------"
+echo "k8"
+uv run profile_forward_pass.py --size medium --num-epochs 1 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --msa-type BallMSA --batch-size 1 --nsa-type NSAMSA --topk 8
+echo "k8 done"
+echo "-------"
+echo "k16"
+uv run profile_forward_pass.py --size medium --num-epochs 1 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --msa-type BallMSA --batch-size 1 --nsa-type NSAMSA --topk 16
+echo "k16 done"
+echo "-------"
+echo "k32"
+uv run profile_forward_pass.py --size medium --num-epochs 1 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --msa-type BallMSA --batch-size 1 --nsa-type NSAMSA --topk 32
+echo "k32 done"
+echo "-------"
+echo "k64"
+uv run profile_forward_pass.py --size medium --num-epochs 1 --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" --msa-type BallMSA --batch-size 1 --nsa-type NSAMSA --topk 64
+echo "k64 done"

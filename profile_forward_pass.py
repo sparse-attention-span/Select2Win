@@ -13,10 +13,10 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.profiler import profile, record_function, ProfilerActivity, tensorboard_trace_handler
 
-from erwin.training import fit
-from erwin.models.erwin import ErwinTransformer
-from erwin.experiments.datasets import ShapenetCarDataset
-from erwin.experiments.wrappers import ShapenetCarModel
+from training import fit
+from models.erwin import ErwinTransformer
+from experiments.datasets import ShapenetCarDataset
+from experiments.wrappers import ShapenetCarModel
 import time
 import gc
 
@@ -246,11 +246,11 @@ if __name__ == "__main__":
 
     # torch.autograd.set_detect_anomaly(True)
     # Run the training
-    
+
     model.eval()
     batch = next(iter(train_loader))
     batch = {k: v.cuda() for k, v in batch.items()}
-    
+
     # Run the profiler on a single batch
     with profile(
         activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
@@ -261,10 +261,9 @@ if __name__ == "__main__":
         with_modules=True,
     ) as prof2:
         model.validation_step(batch)
-        
+
     print(
         prof2.key_averages().table(
             sort_by="flops", row_limit=10
         )
     )
-        
