@@ -11,6 +11,8 @@ To linearize attention computation, Erwin restricts the computation of attention
 Although interaction with balls closeby is ensured by the tree-like structure Erwin provides, interaction between distant nodes remains limited, as compression up the ball tree causes a loss of native fidelity, and rotation requires many iterations for distant points to interact.
 This becomes especially problematic in datasets where long range interactions are critical for data processing, such as in airflow pressure modeling. [Native sparse attention (NSA)](https://arxiv.org/abs/2502.11089) introduces a selection mechanism where tokens are filtered in a block-based pattern before attention is computed, providing a method by which important long range detail is included without relying on full attention. In this work, we introduce Select2Win, a method to combine NSA into the Erwin transformer architecture, and report increased performance on a variety of datasets while keeping Erwin's computational efficiency.
 
+![Attention maps](./images/attn_maps_first_head(1).png)
+
 ## Related work
 ### Attention for Point Clouds
 Adding structure to a point cloud in order to reduce the computational complexity of self-attention is a common approach for attention-based methods.
@@ -119,7 +121,6 @@ python profile_forward_pass.py --size medium --num-epochs 1 --data-path "shapene
 ```
 
 ### Creating attention maps
-![Attention maps](./images/attn_maps_first_head(1).png)
 To create attention maps for each head of an NSA layer, use the following steps.
 First, extract the attention maps from the checkpoint. You should change the checkpoint path in ```experiments/attn_maps_shapenet.py```. Then, run this file with the same configuration as used for training, but replace ```--nsa-type AccessibleNSAMSA```.
 
