@@ -119,6 +119,7 @@ python profile_forward_pass.py --size medium --num-epochs 1 --data-path "shapene
 ```
 
 ### Creating attention maps
+![Attention maps](./images/attn_maps_first_head(1).png)
 To create attention maps for each head of an NSA layer, use the following steps.
 First, extract the attention maps from the checkpoint. You should change the checkpoint path in ```experiments/attn_maps_shapenet.py```. Then, run this file with the same configuration as used for training, but replace ```--nsa-type AccessibleNSAMSA```.
 
@@ -128,6 +129,7 @@ cd visualizations
 python attn_maps.py --input-path PATH TO ATTN MAPS FILE
 ```
 to generate the attention maps.
+
 
 ## Contributions
 
