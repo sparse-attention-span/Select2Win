@@ -123,3 +123,6 @@ Hua Chang Bakker:
 - Prototype implementations
 - Running experiments on Cosmology
 - Creating visualizations, such as the attention maps and receptive field
+
+## Credits
+Much of the code in this repository is based on the official code for the [Erwin Transformer](https://github.com/maxxxzdn/erwin) and the [Triton-based implementation of NSA](https://github.com/lucidrains/native-sparse-attention-pytorch) by LucidRains.
