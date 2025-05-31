@@ -1,0 +1,16 @@
+#!/bin/bash
+#SBATCH --partition=gpu_h100
+#SBATCH --gpus=1
+#SBATCH --job-name=K64
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --time=04:00:00
+#SBATCH --output=slurm/erwinshapenet_k64.%A.%N.out
+
+source erwin/bin/activate
+
+cd experiments
+
+uv run train_cosmology.py --num-epochs 3000 --use-wandb --test \
+ --data-path "/scratch-shared/scur2588/data/cosmology" \
+ --nsa-type NSAMSA --nsa-loc begin --topk 64 --size medium --experiment cosmosk64

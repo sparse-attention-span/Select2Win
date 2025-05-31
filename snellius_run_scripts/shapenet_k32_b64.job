@@ -1,0 +1,16 @@
+#!/bin/bash
+#SBATCH --partition=gpu_h100
+#SBATCH --gpus=1
+#SBATCH --job-name=K32B64
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --time=04:00:00
+#SBATCH --output=slurm/erwinshapenet_k32.%A.%N.out
+
+source erwin/bin/activate
+
+cd experiments
+
+uv run train_shapenet.py --num-epochs 40000 --lr 1e-3 --use-wandb --test --seed 70 \
+ --data-path "/scratch-shared/scur2588/data/mlcfd_data/preprocessed" \
+ --nsa-type NSAMSA --nsa-loc begin --topk 32 --size medium --experiment k32b64s70 --selectionballsize 64
