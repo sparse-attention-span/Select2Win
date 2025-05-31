@@ -8,17 +8,9 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=cosmos_logs/slurm_output_%A.out
 
-source ../erwin/bin/activate
+cd experiments
 
-# CUDA_LAUNCH_BLOCKING=1 python train_cosmology.py \
-#     --data-path ../cosmology_data \
-#     --size small \
-#     --num-samples 8192 \
-#     --batch-size 16 \
-#     --num-epochs 3000 \
-#     --msa-type LucidRains \
-#     --experiment sperwin_base \
-#     --config configs/lucidrains_cosmos.yaml
+source ../erwin/bin/activate
 
 CUDA_LAUNCH_BLOCKING=1 python train_cosmology.py \
     --data-path ../cosmology_data \

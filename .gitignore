@@ -18,8 +18,8 @@ slurm
 experiments/log_dir
 
 # ignore visualization script output
-*.pdf
-*.png
+# *.pdf
+# *.png
 *.txt
 
 # Byte-compiled / optimized / DLL files
