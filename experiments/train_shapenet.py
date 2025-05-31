@@ -59,6 +59,7 @@ def parse_args():
         type=int,
         help="Number of selected blocks for attention"
     )
+    parser.add_argument("--masks", type=bool, help="use only with nsamsa")
 
     return parser.parse_args()
 
@@ -215,6 +216,7 @@ if __name__ == "__main__":
             attn_kwargs = {}
             attn_kwargs |= { "implementation": "pytorch" } if args.no_triton else {}
             attn_kwargs |= { "topk" : args.topk } if args.topk is not None else {}
+            attn_kwargs |= { "masks" : args.masks } if args.masks is not None else {}
             model_config = erwin_configs[args.size] | {
                 "msa_type": args.msa_type,
                 "nsa_type": args.nsa_type,
