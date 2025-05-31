@@ -41,7 +41,7 @@ try:
 except ImportError:
     pass
 
-from native_sparse_attention_pytorch.triton_native_sparse_attention import native_sparse_attend
+from .triton_native_sparse_attention import native_sparse_attend
 
 # flex attn sliding attention mask
 
@@ -465,7 +465,7 @@ class SparseAttention(Module):
 
             if self.use_triton_kernel and not disable_triton_kernel:
 
-                from native_sparse_attention_pytorch.triton_native_sparse_attention import native_sparse_attend
+                from .triton_native_sparse_attention import native_sparse_attend
 
                 fmask = selected_importance_values > 1e-10
 
@@ -935,7 +935,7 @@ class SparseAttentionMinimal(Module):
 
             if self.use_triton_kernel and not disable_triton_kernel:
                 # from .triton_hell import native_sparse_attend
-                from native_sparse_attention_pytorch.triton_native_sparse_attention import native_sparse_attend
+                from .triton_native_sparse_attention import native_sparse_attend
 
                 fmask = selected_importance_values > 1e-10
 

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from native_sparse_attention_pytorch.tensor_typing import Float, Int, Bool
+from .tensor_typing import Float, Int, Bool
 
 # taken from https://github.com/Dao-AILab/flash-attention/blob/main/flash_attn/flash_attn_triton.py
 # with fixes for triton 2.3
@@ -12,7 +12,6 @@ import torch
 from torch import Tensor, arange
 import torch.nn.functional as F
 
-import einx
 from einops import repeat, rearrange, reduce
 
 def exists(v):

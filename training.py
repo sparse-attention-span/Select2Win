@@ -10,12 +10,8 @@ from torch.profiler import (
     tensorboard_trace_handler,
     ExecutionTraceObserver
 )
-from contextlib import ExitStack
-import pandas as pd
-
 from torch.profiler import profile, record_function, ProfilerActivity, tensorboard_trace_handler
 from contextlib import ExitStack
-import pandas as pd
 
 
 def setup_wandb_logging(model, config, project_name="erwin-more-data"):
@@ -358,8 +354,8 @@ def fit(
             loss_keys = [k for k in test_stats.keys() if "loss" in k]
             for k in loss_keys:
                 print(f"Test {k}: {test_stats[k]:.4f}")
-                
-                
+
+
     if config.get("profile"):
         # Run the profiler on a single batch
         with profile(
@@ -374,7 +370,7 @@ def fit(
             batch = next(iter(train_loader))
             batch = {k: v.cuda() for k, v in batch.items()}
             model(batch)
-            
+
             print(
                 prof2.key_averages().table(
                     sort_by="self_cuda_memory_usage", row_limit=10
