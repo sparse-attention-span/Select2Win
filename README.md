@@ -102,6 +102,33 @@ sbatch snellius_run_scripts/run_cosmo.job
 
 Although default Erwin/Select2Win configurations are provided in the python scripts, it is possible to create a custom config, such as in experiments/configs. This config can be passed by adding the path to the config file as via the `--config` flag.
 
+### Profiling Select2Win
+To run the profiler, use the following commands:
+
+Base Erwin:
+```
+python profile_forward_pass.py --size medium --num-epochs 1 --data-path "shapenet_car/preprocessed" --msa-type BallMSA --batch-size 1
+```
+NSA with topk = 2
+```
+python profile_forward_pass.py --size medium --num-epochs 1 --data-path "shapenet_car/preprocessed" --msa-type BallMSA --batch-size 1 --nsa-type NSAMSA --topk 2
+```
+Full Attention layer
+```
+python profile_forward_pass.py --size medium --num-epochs 1 --data-path "shapenet_car/preprocessed" --msa-type BallMSA --batch-size 1 --nsa-type FullAttention
+```
+
+### Creating attention maps
+To create attention maps for each head of an NSA layer, use the following steps.
+First, extract the attention maps from the checkpoint. You should change the checkpoint path in ```experiments/attn_maps_shapenet.py```. Then, run this file with the same configuration as used for training, but replace ```--nsa-type AccessibleNSAMSA```.
+
+After this scripts finishes, a PyTorch file containing the attention maps can be found in ```experiments/attn_maps```. Run
+```
+cd visualizations
+python attn_maps.py --input-path PATH TO ATTN MAPS FILE
+```
+to generate the attention maps.
+
 ## Contributions
 
 **Please note that all members contributed to all parts of the project: the below division is an overview of what team members contributed most on, but overall, all team members contributed equally to the project.**
