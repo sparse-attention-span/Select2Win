@@ -55,6 +55,13 @@ else
     uv pip install Cython
     uv pip install setuptools==79.0.1
 
+
+    # LucidRains NSA dependencies
+    uv pip install einx
+    uv pip install jaxtyping
+    uv pip install local-attention
+    uv pip install rotary-embedding-torch
+
     # PointTransformer v3 dependencies
     uv pip install addict
     uv pip install timm

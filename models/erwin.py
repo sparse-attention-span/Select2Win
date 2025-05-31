@@ -514,6 +514,8 @@ def sparse_attention_pytorch(q, k, v, selection_size, topk_indices):
 
     out = rearrange(out, "b H nm km E -> (b nm) (km H E)")
 
+    return out
+
 
 class FullAttention(nn.Module):
     """Full attention module."""
