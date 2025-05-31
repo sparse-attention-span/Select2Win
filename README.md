@@ -156,5 +156,11 @@ Dante Campregher:
 - Running experiments on ShapeNet (architecture iteration)
 - Code refactoring for merging of team implementations
 
+John Yao:
+
+- Prototyping models
+- Literature review
+- Writing report
+
 ## Credits
 Much of the code in this repository is based on the official code for the [Erwin Transformer](https://github.com/maxxxzdn/erwin) and the [Triton-based implementation of NSA](https://github.com/lucidrains/native-sparse-attention-pytorch) by LucidRains.
