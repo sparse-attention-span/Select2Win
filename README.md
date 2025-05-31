@@ -106,11 +106,12 @@ Although default Erwin/Select2Win configurations are provided in the python scri
 
 **Please note that all members contributed to all parts of the project: the below division is an overview of what team members contributed most on, but overall, all team members contributed equally to the project.**
 
-Dante Campregher:
 
-- Modification and adaptation of third party Triton kernel, including insight on mathematical properties.
-- Running experiments on ShapeNet (architecture iteration)
-- Code refactoring for merging of team implementations
+Hua Chang Bakker:
+
+- Prototype implementations
+- Running experiments on Cosmology
+- Creating visualizations, such as the attention maps and receptive field
 
 Madelon Bernardy:
 
@@ -118,11 +119,12 @@ Madelon Bernardy:
 - code refactoring to aim to debug third party NSA implementation
 - writing sections of (draft and main) report.
 
-Hua Chang Bakker:
+  
+Dante Campregher:
 
-- Prototype implementations
-- Running experiments on Cosmology
-- Creating visualizations, such as the attention maps and receptive field
+- Modification and adaptation of third party Triton kernel, including insight on mathematical properties.
+- Running experiments on ShapeNet (architecture iteration)
+- Code refactoring for merging of team implementations
 
 ## Credits
 Much of the code in this repository is based on the official code for the [Erwin Transformer](https://github.com/maxxxzdn/erwin) and the [Triton-based implementation of NSA](https://github.com/lucidrains/native-sparse-attention-pytorch) by LucidRains.
