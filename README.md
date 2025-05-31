@@ -143,7 +143,7 @@ Hua Chang Bakker:
 - Running experiments on Cosmology
 - Creating visualizations, such as the attention maps and receptive field
 
-Madelon Bernardy:
+Madelon Bernardy *(due to also using Dante's account on snellius, most of Madelons commits are under Dante's account)*:
 
 - Running experiments on ShapeNet (ablations and architecture iteration)
 - code refactoring to aim to debug third party NSA implementation
